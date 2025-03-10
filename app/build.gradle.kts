@@ -64,4 +64,7 @@ dependencies {
     implementation ("androidx.compose.ui:ui-tooling-preview")
     implementation ("androidx.compose.material3:material3")
     implementation ("androidx.compose.material:material-icons-extended")
+    implementation("com.google.android.gms:play-services-location:21.0.1")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
+    implementation("com.google.android.gms:play-services-maps:18.2.0")
 }

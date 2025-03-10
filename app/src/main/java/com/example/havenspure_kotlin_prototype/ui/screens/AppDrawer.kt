@@ -18,9 +18,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.havenspure_kotlin_prototype.navigation.Screen
 
 @Composable
-fun AppDrawer(onCloseDrawer: () -> Unit) {
+fun AppDrawer(
+    onCloseDrawer: () -> Unit,
+    onNavigateToScreen: (String) -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxHeight()
@@ -34,7 +38,7 @@ fun AppDrawer(onCloseDrawer: () -> Unit) {
             title = stringResource(R.string.menu_tours),
             onClick = {
                 onCloseDrawer()
-                // Navigation would go here
+                onNavigateToScreen(Screen.Main.route)
             }
         )
 
@@ -45,7 +49,7 @@ fun AppDrawer(onCloseDrawer: () -> Unit) {
             title = stringResource(R.string.menu_trophies),
             onClick = {
                 onCloseDrawer()
-                // Navigation would go here
+                onNavigateToScreen(Screen.Trophies.route)
             }
         )
 
@@ -56,7 +60,7 @@ fun AppDrawer(onCloseDrawer: () -> Unit) {
             title = stringResource(R.string.menu_feedback),
             onClick = {
                 onCloseDrawer()
-                // Navigation would go here
+                onNavigateToScreen(Screen.Feedback.route)
             }
         )
 
@@ -67,7 +71,7 @@ fun AppDrawer(onCloseDrawer: () -> Unit) {
             title = stringResource(R.string.menu_support),
             onClick = {
                 onCloseDrawer()
-                // Navigation would go here
+                onNavigateToScreen(Screen.Support.route)
             }
         )
 
@@ -78,7 +82,7 @@ fun AppDrawer(onCloseDrawer: () -> Unit) {
             title = stringResource(R.string.menu_about),
             onClick = {
                 onCloseDrawer()
-                // Navigation would go here
+                onNavigateToScreen(Screen.About.route)
             }
         )
 

@@ -39,8 +39,8 @@ import com.example.havenspure_kotlin_prototype.ui.theme.TextDark
 @Composable
 fun LocationPermissionScreen(
     viewModel: LocationViewModel,
-    onNavigateToMain: () -> Unit
-) {
+    onNavigateToMain: () -> Unit,
+    locationUtils: LocationUtils) {
     // State to control welcome dialog visibility
     var showWelcomeDialog by remember { mutableStateOf(true) }
     var showPermissionDialog by remember { mutableStateOf(false) }
@@ -51,17 +51,12 @@ fun LocationPermissionScreen(
 
     // Context and LocationUtils
     val context = LocalContext.current
-    val locationUtils = LocationUtils(context)
-
     // Permission launcher for precise and approximate location
     val requestPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
         onResult = { permissions ->
-            // Check if either permission was granted
-            val fineLocationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
-            val coarseLocationGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-
-            if (fineLocationGranted || coarseLocationGranted) {
+            // Use the utility function to check permissions
+            if (locationUtils.hasLocationPermission(context)) {
                 // Permission granted, request location updates
                 locationUtils.requestLocationUpdates(viewModel)
                 // Navigate to main screen

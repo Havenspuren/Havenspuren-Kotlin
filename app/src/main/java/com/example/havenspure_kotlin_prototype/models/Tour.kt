@@ -1,10 +1,14 @@
 package com.example.havenspure_kotlin_prototype.models
 
+import com.example.havenspure_kotlin_prototype.Data.LocationData
+
 data class Tour(
     val id: String,
     val title: String,
-    val progress: Int,
     val description: String = "",
-    val imageId: Int? = null,
-    val points: List<String> = emptyList()
+    val address: String = "",
+    val location: LocationData? = null,
+    val audioResourceId: Int? = null,
+    val imageResId: Int? = null,
+    val progress: Int = 0
 )

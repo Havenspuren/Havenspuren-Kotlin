@@ -13,21 +13,26 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.havenspure_kotlin_prototype.R
 import com.example.havenspure_kotlin_prototype.ViewModels.LocationViewModel
 import com.example.havenspure_kotlin_prototype.models.Tour
 import com.example.havenspure_kotlin_prototype.ui.components.MapComponent
+import com.example.havenspure_kotlin_prototype.ui.theme.AccentColor
 import com.example.havenspure_kotlin_prototype.ui.theme.GradientEnd
 import com.example.havenspure_kotlin_prototype.ui.theme.GradientStart
 import com.example.havenspure_kotlin_prototype.ui.theme.TextDark
@@ -37,15 +42,14 @@ import com.example.havenspure_kotlin_prototype.ui.theme.TextDark
 fun MainScreen(
     onOpenDrawer: () -> Unit,
     onTourSelected: (String) -> Unit = {},
-    locationViewModel: LocationViewModel? = null
+    locationViewModel: LocationViewModel,
+    onEntedeckenClick : () -> Unit
 ) {
-    val tours = listOf(
-        Tour(id = "t1", title = "Test Route 1", progress = 0),
-        Tour(id = "t2", title = "Test Route 2", progress = 0)
-    )
+
 
     // Get location from ViewModel if available
-    val location by locationViewModel?.location ?: androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(null) }
+    val location by locationViewModel?.location ?: remember { mutableStateOf(null) }
+    val address by locationViewModel?.address ?: remember { mutableStateOf(null) }
 
     // Get screen height to calculate proportions
     val configuration = LocalConfiguration.current
@@ -53,7 +57,7 @@ fun MainScreen(
 
     // Calculate fixed heights for sections
     val headerHeight = 150.dp  // Reduced back to original size
-    val mapHeight = 350.dp  // Fixed height for map
+    val mapHeight = 400.dp  // Fixed height for map
     val toursHeight = 180.dp
 
     Scaffold(
@@ -109,15 +113,19 @@ fun MainScreen(
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
             ) {
+                Spacer(modifier = Modifier.height(2.dp))
+
                 // Title section with fixed height
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(headerHeight)
-                        .padding(horizontal = 20.dp, vertical = 10.dp),
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
+                    Spacer(modifier = Modifier.height(10.dp))
+
                     Text(
                         text = stringResource(R.string.title_wilhelmshaven),
                         fontSize = 36.sp,
@@ -125,7 +133,6 @@ fun MainScreen(
                         color = TextDark
                     )
 
-                    Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
                         text = stringResource(R.string.subtitle_explore),
@@ -134,6 +141,8 @@ fun MainScreen(
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 20.dp)
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+
                 }
 
                 // Map section with fixed height
@@ -141,36 +150,15 @@ fun MainScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(mapHeight)
-                        .padding(horizontal = 10.dp)
+                        .padding(horizontal = 10.dp, vertical = 16.dp)
                         .clip(RoundedCornerShape(8.dp))
                 ) {
-                    // Use the MapComponent with fixed height
+                    // Always use the MapComponent - it will show Wilhelmshaven center if location is null
                     MapComponent(locationData = location)
-
-                    // This overlay will always be visible regardless of map or image
-                    if (location == null) {
-                        // Show pagination dots only when showing static image
-                        Row(
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(bottom = 20.dp),
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            repeat(4) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(10.dp)
-                                        .padding(horizontal = 5.dp)
-                                        .clip(CircleShape)
-                                        .background(Color.White)
-                                )
-                            }
-                        }
-                    }
                 }
 
-                // Location information section - MOVED HERE BELOW THE MAP
-                location?.let {
+                // Location information section
+                address?.let {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -192,80 +180,59 @@ fun MainScreen(
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(24.dp)
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(16.dp))
                             Text(
-                                text = "Standort: ${String.format("%.6f", it.latitude)}, ${String.format("%.6f", it.longitude)}",
+                                text = "Ihr Standort: $it",
                                 fontSize = 14.sp,
-                                color = TextDark
+                                color = TextDark,
+                                fontWeight = FontWeight.Medium,
+                                letterSpacing = 0.25.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // Replace the tours list with a centered oval button (like in the screenshot)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(85.dp)
+                        .padding(top = 8.dp, bottom = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(
+                        onClick = {
+                            onEntedeckenClick()
+                        },
+                        shape = RoundedCornerShape(70.dp), // Oval shape with rounded corners
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AccentColor // Using theme's AccentColor
+                        ),
+                        modifier = Modifier
+                            .width(220.dp)
+                            .height(90.dp)
+                            .shadow(8.dp, RoundedCornerShape(70.dp))
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "ENTDECKEN",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 22.sp,
+                                color = Color.White,
+                                letterSpacing = 1.sp
                             )
                         }
                     }
                 }
-
-                // Tours list with fixed height
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(toursHeight)
-                        .padding(top = 10.dp, bottom = 10.dp)
-                ) {
-                    tours.forEach { tour ->
-                        TourItem(
-                            tour = tour,
-                            onClick = { onTourSelected(tour.id) }
-                        )
-                    }
-                }
             }
-        }
-    }
-}
-
-@Composable
-fun TourItem(
-    tour: Tour,
-    onClick: () -> Unit = {}
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 8.dp, horizontal = 20.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.LocationOn,
-            contentDescription = null,
-            tint = TextDark,
-            modifier = Modifier.size(35.dp)
-        )
-
-        Spacer(modifier = Modifier.width(20.dp))
-
-        Text(
-            text = tour.title,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            color = TextDark
-        )
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        Button(
-            onClick = onClick,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.secondary
-            ),
-            shape = RoundedCornerShape(25.dp),
-            modifier = Modifier.padding(end = 0.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.btn_start),
-                color = Color.White,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 10.dp)
-            )
         }
     }
 }

@@ -34,6 +34,7 @@ class LocationUtils(val context: Context) {
                 locationResult.lastLocation?.let {
                     val location = LocationData(latitude = it.latitude, longitude =  it.longitude)
                     viewModel.updateLocation(location)
+                    reverseGeocodeLocation(viewModel)
                 }
             }
         }
@@ -43,6 +44,18 @@ class LocationUtils(val context: Context) {
 
         _fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper())
     }
+    @SuppressLint("MissingPermission")
+    fun getLastKnownLocationAndSetupUpdates(viewModel: LocationViewModel) {
+        _fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+            if (location != null) {
+                val locationData = LocationData(latitude = location.latitude, longitude = location.longitude)
+                viewModel.updateLocation(locationData)
+                reverseGeocodeLocation(viewModel)
+            }
+            // Set up continuous location updates for future updates
+            requestLocationUpdates(viewModel)
+        }
+    }
 
 
     fun hasLocationPermission(context: Context):Boolean{
@@ -50,7 +63,7 @@ class LocationUtils(val context: Context) {
         return ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                &&
+                ||
                 ContextCompat.checkSelfPermission(
                     context,
                     Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -58,13 +71,14 @@ class LocationUtils(val context: Context) {
     }
 
 
-    fun reverseGeocodeLocation(location: LocationData) : String{
+    fun reverseGeocodeLocation( viewmodel : LocationViewModel){
         val geocoder = Geocoder(context, Locale.getDefault())
-        val coordinate = LatLng(location.latitude, location.longitude)
+        val location : LocationData? = viewmodel.location.value
+        val coordinate = location?.let { it1 -> LatLng(it1.latitude, it1.longitude) }
         val addresses:MutableList<Address>? =
-            geocoder.getFromLocation(coordinate.latitude, coordinate.longitude, 1)
-        return if(addresses?.isNotEmpty() == true){
-            addresses[0].getAddressLine(0)
+            coordinate?.let { geocoder.getFromLocation(it.latitude, coordinate.longitude, 1) }
+         if(addresses?.isNotEmpty() == true){
+             viewmodel.updateAddress(addresses[0].getAddressLine(0))
         }else{
             "Address not found"
         }

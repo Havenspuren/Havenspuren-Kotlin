@@ -1,10 +1,15 @@
 package com.example.havenspure_kotlin_prototype.navigation
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -12,10 +17,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.example.havenspure_kotlin_prototype.AppDrawer
+import com.example.havenspure_kotlin_prototype.Utils.LocationUtils
 import com.example.havenspure_kotlin_prototype.ViewModels.LocationViewModel
 import com.example.havenspure_kotlin_prototype.ui.screens.LocationPermissionScreen
 import com.example.havenspure_kotlin_prototype.ui.screens.MainScreen
 import com.example.havenspure_kotlin_prototype.ui.screens.SplashScreen
+import com.example.havenspure_kotlin_prototype.ui.screens.ToursMainScreen
 import kotlinx.coroutines.launch
 
 @Composable
@@ -27,17 +34,28 @@ fun AppNavHost(navController: NavHostController, context: Context) {
     // Drawer state for the navigation drawer
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    // Context and LocationUtils
+    val context = LocalContext.current
+    val locationUtils = LocationUtils(context)
 
     // Define the navigation graph
     NavHost(navController = navController, startDestination = Screen.Splash.route) {
 
-        // Splash screen destination
+        // In AppNavHost's NavHost setup
         composable(Screen.Splash.route) {
             SplashScreen(
                 onNavigateToMain = {
-                    // Go to location permission screen after splash
-                    navController.navigate(Screen.LocationPermission.route) {
-                        popUpTo(Screen.Splash.route) { inclusive = true }
+                    // Check location permissions
+                    if (locationUtils.hasLocationPermission(context)) {
+                        locationUtils.getLastKnownLocationAndSetupUpdates(locationViewModel)                        // Permissions granted, navigate to Main
+                        navController.navigate(Screen.Main.route) {
+                            popUpTo(Screen.Splash.route) { inclusive = true }
+                        }
+                    } else {
+                        // Permissions not granted, navigate to LocationPermission
+                        navController.navigate(Screen.LocationPermission.route) {
+                            popUpTo(Screen.Splash.route) { inclusive = true }
+                        }
                     }
                 }
             )
@@ -52,13 +70,13 @@ fun AppNavHost(navController: NavHostController, context: Context) {
                     navController.navigate(Screen.Main.route) {
                         popUpTo(Screen.LocationPermission.route) { inclusive = true }
                     }
-                }
+                } , locationUtils = locationUtils
             )
         }
 
         // Main screen destination with navigation drawer
         composable(Screen.Main.route) {
-            androidx.compose.material3.ModalNavigationDrawer(
+            ModalNavigationDrawer(
                 drawerState = drawerState,
                 drawerContent = {
                     AppDrawer(
@@ -94,7 +112,48 @@ fun AppNavHost(navController: NavHostController, context: Context) {
                         navController.navigate(Screen.TourDetail.createRoute(tourId))
                     },
                     // Pass the LocationViewModel to MainScreen if needed
-                    locationViewModel = locationViewModel
+                    locationViewModel = locationViewModel ,
+                    onEntedeckenClick = {navController.navigate(Screen.ToursMain.route)}
+                )
+
+            }
+        }
+        composable(Screen.ToursMain.route) {
+            ModalNavigationDrawer(
+                drawerState = drawerState,
+                drawerContent = {
+                    AppDrawer(
+                        onCloseDrawer = {
+                            scope.launch {
+                                drawerState.close()
+                            }
+                        },
+                        onNavigateToScreen = { route ->
+                            // Navigate to selected screen
+                            navController.navigate(route) {
+                                // Avoid multiple copies of the same destination
+                                launchSingleTop = true
+                                // Restore state when navigating back
+                                restoreState = true
+                            }
+                            // Close drawer after navigation
+                            scope.launch {
+                                drawerState.close()
+                            }
+                        }
+                    )
+                }
+            ) {
+                ToursMainScreen(
+                    onOpenDrawer = {
+                        scope.launch {
+                            drawerState.open()
+                        }
+                    },
+                    onTourSelected = {
+                    },
+                    onTourInfo = {
+                    }
                 )
             }
         }

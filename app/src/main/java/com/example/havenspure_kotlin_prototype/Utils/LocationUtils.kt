@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Address
 import android.location.Geocoder
+import android.os.Build
 import android.os.Looper
 import androidx.core.content.ContextCompat
 import com.example.havenspure_kotlin_prototype.Data.LocationData
@@ -70,17 +71,36 @@ class LocationUtils(val context: Context) {
 
     }
 
-
-    fun reverseGeocodeLocation( viewmodel : LocationViewModel){
+    fun reverseGeocodeLocation(viewModel: LocationViewModel) {
         val geocoder = Geocoder(context, Locale.getDefault())
-        val location : LocationData? = viewmodel.location.value
-        val coordinate = location?.let { it1 -> LatLng(it1.latitude, it1.longitude) }
-        val addresses:MutableList<Address>? =
-            coordinate?.let { geocoder.getFromLocation(it.latitude, coordinate.longitude, 1) }
-         if(addresses?.isNotEmpty() == true){
-             viewmodel.updateAddress(addresses[0].getAddressLine(0))
-        }else{
-            "Address not found"
+        val location: LocationData = viewModel.location.value ?: return
+
+        val latitude = location.latitude
+        val longitude = location.longitude
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Newer Android versions (API 33+) - asynchronous
+            geocoder.getFromLocation(latitude, longitude, 1) { addresses ->
+                if (addresses.isNotEmpty()) {
+                    viewModel.updateAddress(addresses[0].getAddressLine(0))
+                } else {
+                    viewModel.updateAddress("Address not found")
+                }
+            }
+        } else {
+            // Older Android versions - synchronous
+            try {
+                @Suppress("DEPRECATION")
+                val addresses = geocoder.getFromLocation(latitude, longitude, 1)
+
+                if (addresses != null && addresses.isNotEmpty()) {
+                    viewModel.updateAddress(addresses[0].getAddressLine(0))
+                } else {
+                    viewModel.updateAddress("Address not found")
+                }
+            } catch (e: Exception) {
+                viewModel.updateAddress("Error finding address")
+            }
         }
     }
 

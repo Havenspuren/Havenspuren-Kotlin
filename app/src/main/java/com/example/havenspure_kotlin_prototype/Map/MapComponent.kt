@@ -1,5 +1,6 @@
 package com.example.havenspure_kotlin_prototype.ui.components
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -9,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.preference.PreferenceManager
 import android.util.Log
+import android.view.MotionEvent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -114,6 +116,7 @@ private fun createGlowingLocationMarker(context: Context, color: Int): BitmapDra
  *
  * @param locationData The user's location data (null if location not available)
  */
+@SuppressLint("ClickableViewAccessibility")
 @Composable
 fun MapComponent(locationData: LocationData?) {
     val context = LocalContext.current
@@ -163,7 +166,16 @@ fun MapComponent(locationData: LocationData?) {
             MapView(context).apply {
                 // Performance settings
                 isTilesScaledToDpi = false
+
+                // Enable multi-touch for pinch zoom
                 setMultiTouchControls(true)
+
+                // Make one-finger scrolling smoother
+                this.isFlingEnabled = true
+
+                // These are critical for smooth single-finger panning
+                this.setBuiltInZoomControls(false)
+
                 isHorizontalMapRepetitionEnabled = false
                 isVerticalMapRepetitionEnabled = false
                 setUseDataConnection(true)
@@ -171,6 +183,19 @@ fun MapComponent(locationData: LocationData?) {
 
                 // Disable compass and zoom controls to reduce sensor usage
                 zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
+
+                // Fix for one-finger panning: override default touch listener behavior
+                this.setOnTouchListener { v, event ->
+                    // This is a simple way to make sure one-finger pan always works
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN -> {
+                            // Always consume the touch event to ensure single-finger panning works
+                            v.parent?.requestDisallowInterceptTouchEvent(true)
+                            false
+                        }
+                        else -> false // Let OSMDroid handle the rest
+                    }
+                }
             }
         }
 

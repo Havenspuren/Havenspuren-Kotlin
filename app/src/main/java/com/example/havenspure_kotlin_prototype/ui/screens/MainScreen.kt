@@ -41,7 +41,6 @@ import com.example.havenspure_kotlin_prototype.ui.theme.TextDark
 @Composable
 fun MainScreen(
     onOpenDrawer: () -> Unit,
-    onTourSelected: (String) -> Unit = {},
     locationViewModel: LocationViewModel,
     onEntedeckenClick : () -> Unit
 ) {

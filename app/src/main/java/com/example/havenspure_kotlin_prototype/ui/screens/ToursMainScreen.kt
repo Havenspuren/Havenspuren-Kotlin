@@ -23,39 +23,20 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.havenspure_kotlin_prototype.Data.LocationData
 import com.example.havenspure_kotlin_prototype.R
+import com.example.havenspure_kotlin_prototype.ViewModels.LocationViewModel
 import com.example.havenspure_kotlin_prototype.models.Tour
+import com.example.havenspure_kotlin_prototype.models.tours
 import com.example.havenspure_kotlin_prototype.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ToursMainScreen(
     onOpenDrawer: () -> Unit,
-    onTourSelected: (String) -> Unit,
+    onTourSelected: (Tour) -> Unit,
     onTourInfo: (String) -> Unit
 ) {
-    // Sample tour data - replace with your actual data source
-    val tours = listOf(
-        Tour(
-            id = "1",
-            title = "Hafenarbeiter",
-            progress = 7,
-            imageResId = R.drawable.ic_launcher_foreground // Replace with actual image
-        ),
-        Tour(
-            id = "2",
-            title = "Bewegungstour",
-            progress = 0,
-            imageResId = R.drawable.ic_launcher_foreground // Replace with actual image
-        ),
-        Tour(
-            id = "3",
-            title = "Helen von Wedel",
-            progress = 0,
-            imageResId = R.drawable.ic_launcher_foreground // Replace with actual image
-        )
-    )
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -102,7 +83,7 @@ fun ToursMainScreen(
                 items(tours) { tour ->
                     TourCard(
                         tour = tour,
-                        onContinueClick = { onTourSelected(tour.id) },
+                        onContinueClick = { onTourSelected(tour) },
                         onInfoClick = { onTourInfo(tour.id) }
                     )
                 }

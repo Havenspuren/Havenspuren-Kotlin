@@ -73,7 +73,9 @@ fun RichtungenZeigenScreen(
             // This includes the direction panel, distance indicators, and navigation controls
             DirectionMapComponent(
                 userLocation = location,
-                destinationLocation = tourLocation
+                destinationLocation = tourLocation,
+                destinationName = "Hafen",
+                onBackPress = {}
             )
         }
     }

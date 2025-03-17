@@ -1,25 +1,15 @@
 package com.example.havenspure_kotlin_prototype.Map
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color as AndroidColor
-import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.drawable.BitmapDrawable
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import android.preference.PreferenceManager
 import android.util.Log
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.MyLocation
-import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -28,7 +18,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -37,39 +26,50 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.example.havenspure_kotlin_prototype.Data.LocationData
-import com.example.havenspure_kotlin_prototype.ui.theme.PrimaryColor
+import com.example.havenspure_kotlin_prototype.Map.Routing.DirectionMapHelpers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.osmdroid.config.Configuration
+import org.osmdroid.events.MapListener
+import org.osmdroid.events.ScrollEvent
+import org.osmdroid.events.ZoomEvent
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.Marker
-import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
 import java.io.File
-import kotlin.math.*
 
 /**
- * DirectionMapComponent displays a turn-by-turn navigation map with all requested features:
- * - Fixed rotation icon for direction indicator
+ * Enhanced DirectionMapComponent displays a turn-by-turn navigation map using OSRM for routing:
+ * - Full 360-degree rotation of the map with multitouch
  * - Red destination marker
  * - Glowing blue user location
  * - Directional arrows along the route
- * - Current heading indicator
+ * - No automatic camera repositioning
+ * - Fixed improper routing display
  *
  * @param userLocation Current user location
  * @param destinationLocation Destination location
+ * @param destinationName Name of the destination to display in header
+ * @param onBackPress Callback for handling back button press
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DirectionMapComponent(
     userLocation: LocationData?,
-    destinationLocation: LocationData
+    destinationLocation: LocationData,
+    destinationName: String = "Ziel",
+    onBackPress: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val helpers = DirectionMapHelpers
 
     // Minimal configuration for performance
     val configuration = Configuration.getInstance().apply {
@@ -78,10 +78,11 @@ fun DirectionMapComponent(
         userAgentValue = context.packageName
         osmdroidBasePath = context.filesDir
 
-        tileDownloadThreads = 1
-        tileFileSystemThreads = 1
-        tileDownloadMaxQueueSize = 4
-        tileFileSystemMaxQueueSize = 4
+        // Improved performance settings
+        tileDownloadThreads = 2
+        tileFileSystemThreads = 2
+        tileDownloadMaxQueueSize = 8
+        tileFileSystemMaxQueueSize = 8
         expirationOverrideDuration = 1000L * 60 * 60 * 24 * 30 // Cache for a month
     }
 
@@ -103,30 +104,26 @@ fun DirectionMapComponent(
     // State management
     val mapUpdateInProgress = remember { mutableStateOf(false) }
     val mapInitialized = remember { mutableStateOf(false) }
-    val currentDirection = remember { mutableStateOf("Folgen Sie der Strecke") }
+    val currentDirection = remember { mutableStateOf("Starten Sie Ihre Route") }
     val distanceRemaining = remember { mutableStateOf("") }
-    val mapRotation = remember { mutableStateOf(0f) } // Store map rotation angle
+    val routePoints = remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
+    val shouldFollowUser = remember { mutableStateOf(false) }
+    val routeFetched = remember { mutableStateOf(false) }
 
     // Calculate initial distance
     val initialDistance = if (userLocation != null) {
-        calculateDistance(
+        helpers.calculateDistance(
             userLocation.latitude, userLocation.longitude,
             destinationLocation.latitude, destinationLocation.longitude
         )
     } else 0.0
 
     val formattedDistance = if (initialDistance > 0) {
-        formatDistance(initialDistance)
+        helpers.formatDistance(initialDistance)
     } else "Entfernung wird berechnet..."
-
-    // Direction text based on current and destination points
-    val initialDirectionText = if (userLocation != null) {
-        getDirectionText(userLocation, destinationLocation)
-    } else "Starten Sie die Navigation"
 
     // Set initial values
     LaunchedEffect(Unit) {
-        currentDirection.value = initialDirectionText
         distanceRemaining.value = formattedDistance
     }
 
@@ -134,11 +131,11 @@ fun DirectionMapComponent(
     val handlerThread = remember { HandlerThread("DirectionMapThread").apply { start() } }
     val backgroundHandler = remember { Handler(handlerThread.looper) }
 
-    // Map view with performance settings
+    // Map view with rotation enabled
     val mapView = remember {
         MapView(context).apply {
             // Performance settings
-            isTilesScaledToDpi = false
+            isTilesScaledToDpi = true
             setMultiTouchControls(true)
             isHorizontalMapRepetitionEnabled = false
             isVerticalMapRepetitionEnabled = false
@@ -148,50 +145,236 @@ fun DirectionMapComponent(
             setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
 
             // Set zoom levels
-            minZoomLevel = 15.0
-            maxZoomLevel = 19.0
+            minZoomLevel = 12.0
+            maxZoomLevel = 25.0
+
+            // Default zoom for navigation
+            controller.setZoom(17.0)
         }
     }
 
-    // Initialize map on first composition
+    // Add rotation gesture overlay - essential for 360-degree rotation
+    val rotationGestureOverlay = remember { RotationGestureOverlay(mapView) }
+
+    // Pre-fetch the route immediately on composition to reduce delay
+    LaunchedEffect(Unit) {
+        if (!routeFetched.value) {
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    Log.d("DirectionMap", "Pre-fetching OSRM route...")
+                    val routeResult = helpers.fetchOsrmRoute(
+                        startPoint.longitude, startPoint.latitude,
+                        destinationPoint.longitude, destinationPoint.latitude
+                    )
+
+                    if (routeResult != null && routeResult.first.isNotEmpty()) {
+                        routePoints.value = routeResult.first
+                        val routeDistance = routeResult.second
+
+                        withContext(Dispatchers.Main) {
+                            distanceRemaining.value = helpers.formatDistance(routeDistance)
+                            if (routeResult.third.isNotEmpty()) {
+                                currentDirection.value = routeResult.third
+                            }
+                            routeFetched.value = true
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("DirectionMap", "Error pre-fetching route: ${e.message}")
+                }
+            }
+        }
+    }
+
+    // Initialize map and fetch OSRM route on first composition
     LaunchedEffect(Unit) {
         if (!mapInitialized.value) {
             try {
-                // Basic setup
+                // Enable rotation
+                rotationGestureOverlay.isEnabled = true
+                mapView.overlays.add(rotationGestureOverlay)
+                mapView.setMultiTouchControls(true)
+
+                // Basic setup - use OpenStreetMap for more street details
                 mapView.setTileSource(TileSourceFactory.MAPNIK)
 
-                // Set zoom level optimized for navigation
-                mapView.controller.setZoom(17.0)
-
-                // Center on user location or start point
+                // Center on user location or start point for initial view ONLY on first load
                 mapView.controller.setCenter(startPoint)
 
-                // Delay to allow map to stabilize, then add route
-                Handler(Looper.getMainLooper()).postDelayed({
-                    try {
-                        // Initialize route and markers
-                        addDirectionRoute(
-                            mapView,
-                            startPoint,
-                            destinationPoint,
-                            routeColor,
-                            userLocationColor,
-                            destinationColor,
-                            context
-                        )
-
-                        mapInitialized.value = true
-                    } catch (e: Exception) {
-                        Log.e("DirectionMap", "Error adding route: ${e.message}")
+                // Add listener to detect when user moves the map
+                mapView.addMapListener(object : MapListener {
+                    override fun onScroll(event: ScrollEvent?): Boolean {
+                        shouldFollowUser.value = false
+                        return false
                     }
-                }, 500)
+
+                    override fun onZoom(event: ZoomEvent?): Boolean {
+                        return false
+                    }
+                })
+
+                // Use the pre-fetched route if available, otherwise fetch it now
+                if (routeFetched.value && routePoints.value.isNotEmpty()) {
+                    // Preserve rotation overlay
+                    val existingOverlays = mapView.overlays.filter { it is RotationGestureOverlay }
+                    mapView.overlays.clear()
+                    mapView.overlays.addAll(existingOverlays)
+
+                    // Add pre-fetched route
+                    helpers.addDirectionRoute(
+                        mapView,
+                        startPoint,
+                        destinationPoint,
+                        routePoints.value,
+                        routeColor,
+                        userLocationColor,
+                        destinationColor,
+                        context
+                    )
+                    mapView.invalidate()
+                    mapInitialized.value = true
+                } else {
+                    // Fetch OSRM route if not pre-fetched
+                    CoroutineScope(Dispatchers.IO).launch {
+                        try {
+                            Log.d("DirectionMap", "Fetching OSRM route...")
+
+                            val routeResult = helpers.fetchOsrmRoute(
+                                startPoint.longitude, startPoint.latitude,
+                                destinationPoint.longitude, destinationPoint.latitude
+                            )
+
+                            if (routeResult != null && routeResult.first.isNotEmpty()) {
+                                Log.d("DirectionMap", "OSRM route received with ${routeResult.first.size} points")
+                                routePoints.value = routeResult.first
+
+                                // Update UI on main thread
+                                withContext(Dispatchers.Main) {
+                                    // Preserve rotation overlay
+                                    val existingOverlays = mapView.overlays.filter { it is RotationGestureOverlay }
+                                    mapView.overlays.clear()
+                                    mapView.overlays.addAll(existingOverlays)
+
+                                    // Add full OSRM route
+                                    helpers.addDirectionRoute(
+                                        mapView,
+                                        startPoint,
+                                        destinationPoint,
+                                        routeResult.first,
+                                        routeColor,
+                                        userLocationColor,
+                                        destinationColor,
+                                        context
+                                    )
+
+                                    // Update distance from OSRM result
+                                    val routeDistance = routeResult.second
+                                    distanceRemaining.value = helpers.formatDistance(routeDistance)
+
+                                    // Update initial direction
+                                    if (routeResult.third.isNotEmpty()) {
+                                        currentDirection.value = routeResult.third
+                                    }
+
+                                    mapView.invalidate()
+                                    mapInitialized.value = true
+                                    routeFetched.value = true
+                                }
+                            } else {
+                                Log.e("DirectionMap", "OSRM route failed or returned empty")
+
+                                // Try fetching street data directly as fallback
+                                val streetPoints = helpers.fetchAllStreets(
+                                    startPoint.longitude, startPoint.latitude,
+                                    destinationPoint.longitude, destinationPoint.latitude
+                                )
+
+                                if (streetPoints.isNotEmpty()) {
+                                    Log.d("DirectionMap", "Using street data with ${streetPoints.size} points")
+                                    routePoints.value = streetPoints
+
+                                    withContext(Dispatchers.Main) {
+                                        val existingOverlays = mapView.overlays.filter { it is RotationGestureOverlay }
+                                        mapView.overlays.clear()
+                                        mapView.overlays.addAll(existingOverlays)
+
+                                        helpers.addDirectionRoute(
+                                            mapView,
+                                            startPoint,
+                                            destinationPoint,
+                                            streetPoints,
+                                            routeColor,
+                                            userLocationColor,
+                                            destinationColor,
+                                            context
+                                        )
+
+                                        mapInitialized.value = true
+                                        routeFetched.value = true
+                                    }
+                                } else {
+                                    // Last resort - direct route
+                                    Log.d("DirectionMap", "Falling back to direct route")
+                                    withContext(Dispatchers.Main) {
+                                        val directRoute = helpers.createDirectRoute(startPoint, destinationPoint)
+                                        routePoints.value = directRoute
+
+                                        val existingOverlays = mapView.overlays.filter { it is RotationGestureOverlay }
+                                        mapView.overlays.clear()
+                                        mapView.overlays.addAll(existingOverlays)
+
+                                        helpers.addDirectionRoute(
+                                            mapView,
+                                            startPoint,
+                                            destinationPoint,
+                                            directRoute,
+                                            routeColor,
+                                            userLocationColor,
+                                            destinationColor,
+                                            context
+                                        )
+
+                                        mapInitialized.value = true
+                                        routeFetched.value = true
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e("DirectionMap", "Error fetching OSRM route: ${e.message}")
+
+                            // Fallback to direct route if OSRM fails
+                            withContext(Dispatchers.Main) {
+                                val directRoute = helpers.createDirectRoute(startPoint, destinationPoint)
+                                routePoints.value = directRoute
+
+                                val existingOverlays = mapView.overlays.filter { it is RotationGestureOverlay }
+                                mapView.overlays.clear()
+                                mapView.overlays.addAll(existingOverlays)
+
+                                helpers.addDirectionRoute(
+                                    mapView,
+                                    startPoint,
+                                    destinationPoint,
+                                    directRoute,
+                                    routeColor,
+                                    userLocationColor,
+                                    destinationColor,
+                                    context
+                                )
+
+                                mapInitialized.value = true
+                                routeFetched.value = true
+                            }
+                        }
+                    }
+                }
             } catch (e: Exception) {
                 Log.e("DirectionMap", "Error initializing map: ${e.message}")
             }
         }
     }
 
-    // Update map when user location changes
+    // Update map when user location changes - but don't recenter unless explicitly requested
     LaunchedEffect(userLocation) {
         if (mapInitialized.value && userLocation != null && !mapUpdateInProgress.value) {
             mapUpdateInProgress.value = true
@@ -200,54 +383,146 @@ fun DirectionMapComponent(
             val newUserPoint = GeoPoint(userLocation.latitude, userLocation.longitude)
 
             try {
-                // Update map center to follow user
-                mapView.controller.animateTo(newUserPoint)
+                // Only recenter map if follow mode is active - this prevents automatic repositioning
+                if (shouldFollowUser.value) {
+                    mapView.controller.animateTo(newUserPoint)
+                }
 
-                // Calculate new bearing for map orientation
-                val bearing = calculateBearing(
-                    userLocation.latitude, userLocation.longitude,
-                    destinationLocation.latitude, destinationLocation.longitude
-                )
-
-                // Store bearing for rotation indicator
-                mapRotation.value = bearing.toFloat()
-
-                // Update route display
-                Handler(Looper.getMainLooper()).post {
-                    try {
-                        mapView.overlays.clear()
-                        addDirectionRoute(
-                            mapView,
-                            newUserPoint,
-                            destinationPoint,
-                            routeColor,
-                            userLocationColor,
-                            destinationColor,
-                            context
+                // Check if we need to request a new route from OSRM
+                // (if we've deviated significantly from the route)
+                val shouldRefreshRoute = if (routePoints.value.isNotEmpty()) {
+                    // Calculate distance to closest point on route
+                    val closestPointDistance = routePoints.value.minOf { routePoint ->
+                        helpers.calculateDistance(
+                            newUserPoint.latitude, newUserPoint.longitude,
+                            routePoint.latitude, routePoint.longitude
                         )
+                    }
 
-                        // Add direction arrows along route
-                        addDirectionArrows(
-                            mapView,
-                            newUserPoint,
-                            destinationPoint,
-                            routeColor,
-                            context
-                        )
+                    // If we're more than 50 meters from the route, recalculate
+                    closestPointDistance > 50
+                } else {
+                    // No route exists yet, so we need to calculate one
+                    true
+                }
 
-                        // Update direction and distance
-                        val newDistance = calculateDistance(
-                            userLocation.latitude, userLocation.longitude,
-                            destinationLocation.latitude, destinationLocation.longitude
-                        )
+                if (shouldRefreshRoute) {
+                    // Fetch new route in background
+                    CoroutineScope(Dispatchers.IO).launch {
+                        try {
+                            val routeResult = helpers.fetchOsrmRoute(
+                                newUserPoint.longitude, newUserPoint.latitude,
+                                destinationPoint.longitude, destinationPoint.latitude
+                            )
 
-                        distanceRemaining.value = formatDistance(newDistance)
-                        currentDirection.value = getDirectionText(userLocation, destinationLocation)
+                            if (routeResult != null && routeResult.first.isNotEmpty()) {
+                                routePoints.value = routeResult.first
 
-                    } catch (e: Exception) {
-                        Log.e("DirectionMap", "Error updating route: ${e.message}")
-                    } finally {
-                        mapUpdateInProgress.value = false
+                                // Update UI on main thread
+                                withContext(Dispatchers.Main) {
+                                    try {
+                                        // Preserve rotation overlay
+                                        val existingOverlays = mapView.overlays.filter { it is RotationGestureOverlay }
+                                        mapView.overlays.clear()
+                                        mapView.overlays.addAll(existingOverlays)
+
+                                        // Add new route with OSRM path
+                                        helpers.addDirectionRoute(
+                                            mapView,
+                                            newUserPoint,
+                                            destinationPoint,
+                                            routeResult.first,
+                                            routeColor,
+                                            userLocationColor,
+                                            destinationColor,
+                                            context
+                                        )
+
+                                        // Update direction and distance from OSRM
+                                        distanceRemaining.value = helpers.formatDistance(routeResult.second)
+                                        currentDirection.value = routeResult.third
+
+                                        mapView.invalidate()
+                                    } finally {
+                                        mapUpdateInProgress.value = false
+                                    }
+                                }
+                            } else {
+                                // Fallback to simple direction if OSRM fails
+                                withContext(Dispatchers.Main) {
+                                    try {
+                                        val newDistance = helpers.calculateDistance(
+                                            userLocation.latitude, userLocation.longitude,
+                                            destinationLocation.latitude, destinationLocation.longitude
+                                        )
+
+                                        distanceRemaining.value = helpers.formatDistance(newDistance)
+                                        currentDirection.value = helpers.getDirectionText(userLocation, destinationLocation)
+                                    } finally {
+                                        mapUpdateInProgress.value = false
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e("DirectionMap", "Error fetching route update: ${e.message}")
+                            withContext(Dispatchers.Main) {
+                                mapUpdateInProgress.value = false
+                            }
+                        }
+                    }
+                } else {
+                    // Just update user marker position without refetching the route or recentering
+                    withContext(Dispatchers.Main) {
+                        try {
+                            // Preserve rotation overlay when clearing
+                            val existingOverlays = mapView.overlays.filter { it is RotationGestureOverlay }
+                            mapView.overlays.clear()
+                            mapView.overlays.addAll(existingOverlays)
+
+                            // Re-add existing route
+                            helpers.addDirectionRoute(
+                                mapView,
+                                newUserPoint,
+                                destinationPoint,
+                                routePoints.value,
+                                routeColor,
+                                userLocationColor,
+                                destinationColor,
+                                context
+                            )
+
+                            // Update distance to destination along route
+                            // Find closest point on route to current location
+                            var closestPointIndex = 0
+                            var minDistance = Double.MAX_VALUE
+
+                            routePoints.value.forEachIndexed { index, point ->
+                                val dist = helpers.calculateDistance(
+                                    newUserPoint.latitude, newUserPoint.longitude,
+                                    point.latitude, point.longitude
+                                )
+                                if (dist < minDistance) {
+                                    minDistance = dist
+                                    closestPointIndex = index
+                                }
+                            }
+
+                            // Calculate remaining distance along route
+                            var remainingDistance = 0.0
+                            for (i in closestPointIndex until routePoints.value.size - 1) {
+                                remainingDistance += helpers.calculateDistance(
+                                    routePoints.value[i].latitude, routePoints.value[i].longitude,
+                                    routePoints.value[i + 1].latitude, routePoints.value[i + 1].longitude
+                                )
+                            }
+
+                            distanceRemaining.value = helpers.formatDistance(remainingDistance)
+
+                            // Ensure map is refreshed without changing camera position
+                            mapView.invalidate()
+                        } finally {
+                            mapUpdateInProgress.value = false
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -301,28 +576,24 @@ fun DirectionMapComponent(
         }
     }
 
-    // UI layout
+    // UI layout - REMOVED redundant title bar with back button
     Column(modifier = Modifier.fillMaxSize()) {
-        // Direction panel like your reference image (teal panel with white text)
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            shape = RoundedCornerShape(8.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = PrimaryColor
-            )
+
+        // Direction info directly (NO redundant title bar)
+        Surface(
+            color = Color(0xFF009688),
+            modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
             ) {
-                // Direction text (like "Gehen Sie nach Südosten")
+                // Direction text
                 Text(
                     text = currentDirection.value,
                     color = Color.White,
-                    fontSize = 20.sp,
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.Bold
                 )
 
@@ -332,7 +603,7 @@ fun DirectionMapComponent(
                 Text(
                     text = distanceRemaining.value,
                     color = Color.White,
-                    fontSize = 18.sp
+                    fontSize = 20.sp
                 )
             }
         }
@@ -346,370 +617,36 @@ fun DirectionMapComponent(
             // Map view
             AndroidView(
                 factory = { mapView },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                update = { view ->
+                    // Empty update to avoid recreation
+                }
             )
 
-            // Direction indicator in bottom left (green circle with arrow)
-            // Now functional - rotates in the direction of travel
-            if (userLocation != null) {
-                FloatingActionButton(
-                    onClick = {
-                        // Toggle map rotation
-                        if (mapView.mapOrientation == 0f) {
-                            // Rotate map to match direction of travel
-                            mapView.mapOrientation = mapRotation.value
-                        } else {
-                            // Reset to north-up orientation
-                            mapView.mapOrientation = 0f
-                        }
-                    },
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(16.dp)
-                        .size(56.dp),
-                    containerColor = Color(0xFF00CC00) // Bright green matching the route
-                ) {
-                    // Navigation arrow pointing in the direction of travel
-                    Icon(
-                        imageVector = Icons.Default.Navigation,
-                        contentDescription = "Karte drehen",
-                        tint = Color.White,
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-
-                // Current location button in bottom right (blue circle)
-                FloatingActionButton(
-                    onClick = {
-                        if (!mapUpdateInProgress.value && userLocation != null) {
-                            val userGeoPoint = GeoPoint(userLocation.latitude, userLocation.longitude)
-                            mapView.controller.animateTo(userGeoPoint, 17.0, 300L)
-                        }
-                    },
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(16.dp),
-                    containerColor = PrimaryColor
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.MyLocation,
-                        contentDescription = "Auf meinen Standort zentrieren",
-                        tint = Color.White
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * Add route line, direction arrows, and markers for the journey.
- */
-private fun addDirectionRoute(
-    mapView: MapView,
-    startPoint: GeoPoint,
-    endPoint: GeoPoint,
-    routeColor: Int,
-    userLocationColor: Int,
-    destinationColor: Int,
-    context: Context
-) {
-    // Destination marker with red color
-    val destinationMarker = Marker(mapView).apply {
-        position = endPoint
-        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-
-        // Create custom red pin
-        val pinDrawable = createCustomPin(context, destinationColor)
-        icon = pinDrawable
-
-        title = "Ziel"
-        // No snippet to keep UI clean for navigation
-    }
-    mapView.overlays.add(destinationMarker)
-
-    // Main route line - thick green line like in navigation apps
-    val routeLine = Polyline(mapView).apply {
-        setPoints(listOf(startPoint, endPoint))
-        outlinePaint.color = routeColor
-        outlinePaint.strokeWidth = 10f // Thick line for visibility
-        outlinePaint.strokeCap = Paint.Cap.ROUND
-        outlinePaint.strokeJoin = Paint.Join.ROUND
-        outlinePaint.isAntiAlias = true
-    }
-    mapView.overlays.add(routeLine)
-
-    // Add glowing user location marker
-    if (startPoint != null) {
-        // Create glowing blue dot for user location
-        val userMarker = Marker(mapView).apply {
-            position = startPoint
-            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-
-            // Use the glowing marker drawable
-            icon = createGlowingLocationMarker(context, userLocationColor)
-
-            title = null // No title for cleaner navigation view
-            setInfoWindow(null) // No info window
-        }
-        mapView.overlays.add(userMarker)
-    }
-
-    // Add direction arrows along the route
-    addDirectionArrows(mapView, startPoint, endPoint, routeColor, context)
-
-    // Refresh the map
-    mapView.invalidate()
-}
-
-/**
- * Add direction arrows along the route to indicate travel direction.
- */
-private fun addDirectionArrows(
-    mapView: MapView,
-    startPoint: GeoPoint,
-    endPoint: GeoPoint,
-    arrowColor: Int,
-    context: Context
-) {
-    // Calculate total distance and divide into segments
-    val distance = calculateDistance(
-        startPoint.latitude, startPoint.longitude,
-        endPoint.latitude, endPoint.longitude
-    )
-
-    // Place arrows every X meters depending on distance
-    val arrowSpacing = when {
-        distance < 100 -> 20.0 // Close - show more arrows
-        distance < 500 -> 50.0
-        distance < 1000 -> 100.0
-        distance < 5000 -> 500.0
-        else -> 1000.0 // Far away - fewer arrows
-    }
-
-    // Calculate number of arrows (at least 1)
-    val numArrows = max(1, (distance / arrowSpacing).toInt())
-
-    if (numArrows > 1) {
-        // Calculate points along the route for arrows
-        for (i in 1 until numArrows) {
-            val fraction = i.toDouble() / numArrows
-
-            // Interpolate between start and end points
-            val arrowLat = startPoint.latitude + fraction * (endPoint.latitude - startPoint.latitude)
-            val arrowLon = startPoint.longitude + fraction * (endPoint.longitude - startPoint.longitude)
-
-            // Create arrow marker
-            val arrowPoint = GeoPoint(arrowLat, arrowLon)
-            val arrowMarker = Marker(mapView).apply {
-                position = arrowPoint
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-
-                // Calculate rotation angle for arrow
-                val bearing = calculateBearing(
-                    startPoint.latitude, startPoint.longitude,
-                    endPoint.latitude, endPoint.longitude
+            // Current location button in bottom right (blue circle)
+            FloatingActionButton(
+                onClick = {
+                    if (!mapUpdateInProgress.value && userLocation != null) {
+                        val userGeoPoint = GeoPoint(userLocation.latitude, userLocation.longitude)
+                        // Center on user location when button is pressed
+                        mapView.controller.animateTo(userGeoPoint)
+                        // Set follow mode to true to maintain centering until user moves map
+                        shouldFollowUser.value = true
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp)
+                    .size(56.dp),
+                containerColor = Color(0xFF03A9F4) // Light blue color as in screenshot
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MyLocation,
+                    contentDescription = "Auf meinen Standort zentrieren",
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp)
                 )
-
-                // Set rotation angle
-                rotation = bearing.toFloat()
-
-                // Create small arrow icon
-                icon = createDirectionArrow(context, arrowColor)
-
-                // No info window or title
-                setInfoWindow(null)
-                title = null
             }
-
-            mapView.overlays.add(arrowMarker)
         }
     }
-}
-
-/**
- * Create a glowing location marker for user position.
- */
-private fun createGlowingLocationMarker(context: Context, color: Int): BitmapDrawable {
-    val size = 48 // Size of the marker in pixels
-    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-
-    // Create paints for layers
-    val outerGlowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    outerGlowPaint.color = color
-    outerGlowPaint.alpha = 40 // Very transparent
-    outerGlowPaint.style = Paint.Style.FILL
-
-    val middleGlowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    middleGlowPaint.color = color
-    middleGlowPaint.alpha = 80 // Semi-transparent
-    middleGlowPaint.style = Paint.Style.FILL
-
-    val centerPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    centerPaint.color = color
-    centerPaint.alpha = 255 // Fully opaque
-    centerPaint.style = Paint.Style.FILL
-
-    // Draw outer glow
-    canvas.drawCircle(size/2f, size/2f, size/2f, outerGlowPaint)
-
-    // Draw middle glow
-    canvas.drawCircle(size/2f, size/2f, size/3f, middleGlowPaint)
-
-    // Draw center dot
-    canvas.drawCircle(size/2f, size/2f, size/6f, centerPaint)
-
-    return BitmapDrawable(context.resources, bitmap)
-}
-
-/**
- * Create a custom pin marker for the destination.
- */
-private fun createCustomPin(context: Context, color: Int): BitmapDrawable {
-    val size = 72 // Size of the marker in pixels
-    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-
-    // Create paints
-    val pinPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    pinPaint.color = color
-    pinPaint.style = Paint.Style.FILL
-
-    val pinStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    pinStrokePaint.color = AndroidColor.WHITE
-    pinStrokePaint.style = Paint.Style.STROKE
-    pinStrokePaint.strokeWidth = 3f
-
-    val circlePaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    circlePaint.color = AndroidColor.WHITE
-    circlePaint.style = Paint.Style.FILL
-
-    // Create pin shape
-    val path = Path()
-
-    // Draw pin body (drop shape)
-    val pinRadius = size * 0.3f
-    val pinCenterX = size / 2f
-    val pinCenterY = size / 4f
-
-    path.addCircle(pinCenterX, pinCenterY, pinRadius, Path.Direction.CW)
-
-    // Add pin point
-    path.moveTo(pinCenterX - pinRadius / 2, pinCenterY + pinRadius * 0.8f)
-    path.lineTo(pinCenterX, size * 0.75f) // Point of the pin
-    path.lineTo(pinCenterX + pinRadius / 2, pinCenterY + pinRadius * 0.8f)
-    path.close()
-
-    // Draw pin with white outline
-    canvas.drawPath(path, pinPaint)
-    canvas.drawPath(path, pinStrokePaint)
-
-    // Draw white circle in center of pin
-    canvas.drawCircle(pinCenterX, pinCenterY, pinRadius * 0.5f, circlePaint)
-
-    return BitmapDrawable(context.resources, bitmap)
-}
-
-/**
- * Create a small arrow icon for direction indicators along the route.
- */
-private fun createDirectionArrow(context: Context, color: Int): BitmapDrawable {
-    val size = 24 // Small size for route arrows
-    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-
-    // Create paint for arrow
-    val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    arrowPaint.color = color
-    arrowPaint.style = Paint.Style.FILL
-    arrowPaint.strokeWidth = 2f
-
-    // Create arrow pointing up
-    val path = Path()
-    path.moveTo(size / 2f, 0f) // Top point
-    path.lineTo(size.toFloat(), size.toFloat()) // Bottom right
-    path.lineTo(size / 2f, size * 0.7f) // Middle bottom
-    path.lineTo(0f, size.toFloat()) // Bottom left
-    path.close()
-
-    // Draw arrow
-    canvas.drawPath(path, arrowPaint)
-
-    return BitmapDrawable(context.resources, bitmap)
-}
-
-/**
- * Calculate distance between two points in meters.
- */
-private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-    val earthRadius = 6371000.0 // meters
-
-    val dLat = Math.toRadians(lat2 - lat1)
-    val dLon = Math.toRadians(lon2 - lon1)
-
-    val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2)
-
-    val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-
-    return earthRadius * c
-}
-
-/**
- * Format distance in a human-readable way.
- */
-private fun formatDistance(distanceMeters: Double): String {
-    return when {
-        distanceMeters < 1000 -> "Entfernung: ${distanceMeters.toInt()} m"
-        else -> "Entfernung: ${String.format("%.1f", distanceMeters / 1000)} km"
-    }
-}
-
-/**
- * Get a human-readable direction based on coordinates.
- */
-private fun getDirectionText(fromLocation: LocationData, toLocation: LocationData): String {
-    // Calculate bearing between points
-    val bearing = calculateBearing(
-        fromLocation.latitude, fromLocation.longitude,
-        toLocation.latitude, toLocation.longitude
-    )
-
-    // Convert bearing to cardinal direction
-    return when {
-        bearing > 337.5 || bearing <= 22.5 -> "Gehen Sie nach Norden"
-        bearing > 22.5 && bearing <= 67.5 -> "Gehen Sie nach Nordosten"
-        bearing > 67.5 && bearing <= 112.5 -> "Gehen Sie nach Osten"
-        bearing > 112.5 && bearing <= 157.5 -> "Gehen Sie nach Südosten"
-        bearing > 157.5 && bearing <= 202.5 -> "Gehen Sie nach Süden"
-        bearing > 202.5 && bearing <= 247.5 -> "Gehen Sie nach Südwesten"
-        bearing > 247.5 && bearing <= 292.5 -> "Gehen Sie nach Westen"
-        bearing > 292.5 && bearing <= 337.5 -> "Gehen Sie nach Nordwesten"
-        else -> "Folgen Sie der Strecke"
-    }
-}
-
-/**
- * Calculate bearing between two points (0-360 degrees).
- */
-private fun calculateBearing(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-    val startLat = Math.toRadians(lat1)
-    val startLng = Math.toRadians(lon1)
-    val endLat = Math.toRadians(lat2)
-    val endLng = Math.toRadians(lon2)
-
-    val dLng = endLng - startLng
-
-    val y = Math.sin(dLng) * Math.cos(endLat)
-    val x = Math.cos(startLat) * Math.sin(endLat) -
-            Math.sin(startLat) * Math.cos(endLat) * Math.cos(dLng)
-
-    var bearing = Math.toDegrees(Math.atan2(y, x))
-    if (bearing < 0) {
-        bearing += 360
-    }
-
-    return bearing
 }

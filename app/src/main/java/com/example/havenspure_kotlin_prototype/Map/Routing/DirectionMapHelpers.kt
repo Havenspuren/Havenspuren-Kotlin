@@ -10,26 +10,64 @@ import android.graphics.drawable.BitmapDrawable
 import android.util.Log
 import com.example.havenspure_kotlin_prototype.Data.LocationData
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
+import java.io.BufferedReader
+import java.io.File
+import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.*
 
 /**
- * Helper methods for the DirectionMapComponent
+ * Helper methods for the DirectionMapComponent with optimized performance
  */
 object DirectionMapHelpers {
 
+    // Improved thread-safe cache for routes with expiration
+    private val routeCache = ConcurrentHashMap<String, CacheEntry>()
+    private const val CACHE_EXPIRATION_MS = 24 * 60 * 60 * 1000L // 24 hours
+
+    // Reduced timeouts for faster fallback
+    private const val OSRM_TIMEOUT_MS = 5000L // 5 seconds
+
+    // File cache
+    private var cacheDir: File? = null
+
+    // Class to hold cached route data with expiration
+    private data class CacheEntry(
+        val routePoints: List<GeoPoint>,
+        val distance: Double,
+        val instruction: String,
+        val timestamp: Long = System.currentTimeMillis()
+    ) {
+        fun isExpired(): Boolean = System.currentTimeMillis() - timestamp > CACHE_EXPIRATION_MS
+    }
+
     /**
-     * Create a glowing location marker for user position.
+     * Initialize cache directory
+     */
+    fun initializeCacheDir(context: Context) {
+        cacheDir = File(context.cacheDir, "route_cache").apply {
+            if (!exists()) {
+                mkdirs()
+            }
+        }
+    }
+
+    /**
+     * Create a glowing location marker for user position with reduced size.
      */
     fun createGlowingLocationMarker(context: Context, color: Int): BitmapDrawable {
-        val size = 48 // Size of the marker in pixels
+        val size = 40 // Reduced size for better performance
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
@@ -62,10 +100,10 @@ object DirectionMapHelpers {
     }
 
     /**
-     * Create a custom pin marker for the destination.
+     * Create a custom pin marker for the destination with reduced complexity.
      */
     fun createCustomPin(context: Context, color: Int): BitmapDrawable {
-        val size = 72 // Size of the marker in pixels
+        val size = 60 // Reduced size for better performance
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
@@ -79,36 +117,535 @@ object DirectionMapHelpers {
         pinStrokePaint.style = Paint.Style.STROKE
         pinStrokePaint.strokeWidth = 3f
 
-        val circlePaint = Paint(Paint.ANTI_ALIAS_FLAG)
-        circlePaint.color = AndroidColor.WHITE
-        circlePaint.style = Paint.Style.FILL
-
-        // Create pin shape
+        // Create simpler pin shape
         val path = Path()
-
-        // Draw pin body (drop shape)
         val pinRadius = size * 0.3f
         val pinCenterX = size / 2f
         val pinCenterY = size / 4f
 
+        // Simplified pin shape (drop shape)
         path.addCircle(pinCenterX, pinCenterY, pinRadius, Path.Direction.CW)
-
-        // Add pin point
-        path.moveTo(pinCenterX - pinRadius / 2, pinCenterY + pinRadius * 0.8f)
+        path.moveTo(pinCenterX - pinRadius / 2, pinCenterY + pinRadius * 0.5f)
         path.lineTo(pinCenterX, size * 0.75f) // Point of the pin
-        path.lineTo(pinCenterX + pinRadius / 2, pinCenterY + pinRadius * 0.8f)
+        path.lineTo(pinCenterX + pinRadius / 2, pinCenterY + pinRadius * 0.5f)
         path.close()
 
-        // Draw pin with white outline
+        // Draw pin
         canvas.drawPath(path, pinPaint)
         canvas.drawPath(path, pinStrokePaint)
-
-        // Draw white circle in center of pin
-        canvas.drawCircle(pinCenterX, pinCenterY, pinRadius * 0.5f, circlePaint)
 
         return BitmapDrawable(context.resources, bitmap)
     }
 
+    /**
+     * Optimized main route fetching method with quick fallback
+     */
+    suspend fun getRoute(
+        startLat: Double, startLon: Double,
+        endLat: Double, endLon: Double,
+        context: Context? = null
+    ): Triple<List<GeoPoint>, Double, String> = withContext(Dispatchers.IO) {
+        // Initialize cache if needed
+        if (context != null && cacheDir == null) {
+            initializeCacheDir(context)
+        }
+
+        // Create cache key
+        val cacheKey = "${startLat.roundTo(5)},${startLon.roundTo(5)}-${endLat.roundTo(5)},${endLon.roundTo(5)}"
+
+        // Check memory cache first
+        routeCache[cacheKey]?.let { cacheEntry ->
+            if (!cacheEntry.isExpired()) {
+                Log.d("DirectionMapHelpers", "Using memory-cached route")
+                return@withContext Triple(cacheEntry.routePoints, cacheEntry.distance, cacheEntry.instruction)
+            } else {
+                // Remove expired entry
+                routeCache.remove(cacheKey)
+            }
+        }
+
+        // Check file cache
+        val cachedRoute = loadRouteFromFileCache(cacheKey)
+        if (cachedRoute != null) {
+            Log.d("DirectionMapHelpers", "Using file-cached route")
+            // Also store in memory cache
+            routeCache[cacheKey] = CacheEntry(
+                cachedRoute.first,
+                cachedRoute.second,
+                cachedRoute.third
+            )
+            return@withContext cachedRoute
+        }
+
+        try {
+            // Try OSRM with shorter timeout
+            val osrmRoute = withTimeoutOrNull(OSRM_TIMEOUT_MS) {
+                fetchOsrmRoute(startLon, startLat, endLon, endLat)
+            }
+
+            if (osrmRoute != null) {
+                // Cache successful OSRM response
+                routeCache[cacheKey] = CacheEntry(
+                    osrmRoute.first,
+                    osrmRoute.second,
+                    osrmRoute.third
+                )
+                saveRouteToFileCache(cacheKey, osrmRoute)
+                return@withContext osrmRoute
+            }
+        } catch (e: TimeoutCancellationException) {
+            Log.e("DirectionMapHelpers", "OSRM request timed out")
+        } catch (e: Exception) {
+            Log.e("DirectionMapHelpers", "Error fetching OSRM route: ${e.message}")
+        }
+
+        // Fast fallback to simplified local routing
+        Log.d("DirectionMapHelpers", "Using local route generation")
+        val startPoint = GeoPoint(startLat, startLon)
+        val endPoint = GeoPoint(endLat, endLon)
+
+        // Use optimized street-based route
+        val streetRoute = createSimplifiedStreetRoute(startPoint, endPoint)
+        val distance = calculateRouteDistance(streetRoute)
+        val direction = getDirectionText(
+            LocationData(startLat, startLon),
+            LocationData(endLat, endLon)
+        )
+
+        val fallbackResult = Triple(streetRoute, distance, direction)
+
+        // Cache the fallback result too
+        routeCache[cacheKey] = CacheEntry(
+            streetRoute,
+            distance,
+            direction
+        )
+
+        return@withContext fallbackResult
+    }
+
+    /**
+     * Round double to specified decimal places for cache key consistency
+     */
+    private fun Double.roundTo(decimals: Int): Double {
+        val factor = 10.0.pow(decimals)
+        return (this * factor).roundToLong() / factor
+    }
+
+    /**
+     * Save route to file cache
+     */
+    private fun saveRouteToFileCache(key: String, route: Triple<List<GeoPoint>, Double, String>) {
+        cacheDir?.let { dir ->
+            try {
+                val file = File(dir, key.hashCode().toString())
+                file.writeText(serializeRoute(route))
+            } catch (e: Exception) {
+                Log.e("DirectionMapHelpers", "Error saving route to cache: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Load route from file cache
+     */
+    private fun loadRouteFromFileCache(key: String): Triple<List<GeoPoint>, Double, String>? {
+        if (cacheDir == null) {
+            return null
+        }
+
+        val dir = cacheDir!!
+        try {
+            val file = File(dir, key.hashCode().toString())
+            if (file.exists() && file.isFile && System.currentTimeMillis() - file.lastModified() < CACHE_EXPIRATION_MS) {
+                return deserializeRoute(file.readText())
+            }
+        } catch (e: Exception) {
+            Log.e("DirectionMapHelpers", "Error loading route from cache: ${e.message}")
+        }
+        return null
+    }
+
+    /**
+     * Serialize route to string for storage
+     */
+    private fun serializeRoute(route: Triple<List<GeoPoint>, Double, String>): String {
+        val points = route.first.joinToString(";") { "${it.latitude},${it.longitude}" }
+        return "$points|${route.second}|${route.third}"
+    }
+
+    /**
+     * Deserialize route from string
+     */
+    private fun deserializeRoute(data: String): Triple<List<GeoPoint>, Double, String>? {
+        try {
+            val parts = data.split("|")
+            if (parts.size != 3) return null
+
+            val pointsStr = parts[0]
+            val distance = parts[1].toDoubleOrNull() ?: return null
+            val instruction = parts[2]
+
+            val points = pointsStr.split(";").map {
+                val coords = it.split(",")
+                if (coords.size != 2) return null
+                val lat = coords[0].toDoubleOrNull() ?: return null
+                val lon = coords[1].toDoubleOrNull() ?: return null
+                GeoPoint(lat, lon)
+            }
+
+            return Triple(points, distance, instruction)
+        } catch (e: Exception) {
+            Log.e("DirectionMapHelpers", "Error deserializing route: ${e.message}")
+            return null
+        }
+    }
+
+    /**
+     * Calculate total distance of a route
+     */
+    private fun calculateRouteDistance(route: List<GeoPoint>): Double {
+        var distance = 0.0
+        for (i in 0 until route.size - 1) {
+            distance += calculateDistance(
+                route[i].latitude, route[i].longitude,
+                route[i + 1].latitude, route[i + 1].longitude
+            )
+        }
+        return distance
+    }
+
+    /**
+     * Fetch route from OSRM API with improved error handling and efficiency
+     */
+    private suspend fun fetchOsrmRoute(
+        startLon: Double, startLat: Double,
+        endLon: Double, endLat: Double
+    ): Triple<List<GeoPoint>, Double, String>? = withContext(Dispatchers.IO) {
+        try {
+            // OSRM API URL for foot navigation
+            val requestUrl = "https://router.project-osrm.org/route/v1/foot/$startLon,$startLat;$endLon,$endLat?overview=full&steps=true&geometries=geojson&alternatives=false"
+            Log.d("DirectionMapHelpers", "Requesting OSRM route")
+
+            val url = URL(requestUrl)
+            val connection = url.openConnection() as HttpURLConnection
+            connection.connectTimeout = 3000 // 3 seconds connect timeout
+            connection.readTimeout = 5000 // 5 seconds read timeout
+            connection.useCaches = true
+
+            try {
+                val responseCode = connection.responseCode
+                if (responseCode != HttpURLConnection.HTTP_OK) {
+                    Log.e("DirectionMapHelpers", "HTTP error code: $responseCode")
+                    return@withContext null
+                }
+
+                // Efficient reading with buffer
+                val reader = BufferedReader(InputStreamReader(connection.inputStream))
+                val response = StringBuilder()
+                val buffer = CharArray(1024)
+                var read: Int
+
+                while (reader.read(buffer).also { read = it } != -1) {
+                    response.append(buffer, 0, read)
+                }
+                reader.close()
+
+                val jsonResponse = JSONObject(response.toString())
+
+                // Check if route was found
+                if (jsonResponse.getString("code") != "Ok") {
+                    Log.e("DirectionMapHelpers", "OSRM Error: ${jsonResponse.getString("code")}")
+                    return@withContext null
+                }
+
+                val routes = jsonResponse.getJSONArray("routes")
+                if (routes.length() == 0) {
+                    Log.e("DirectionMapHelpers", "OSRM returned no routes")
+                    return@withContext null
+                }
+
+                val route = routes.getJSONObject(0)
+                val distance = route.getDouble("distance")
+
+                // Extract the geometry (GeoJSON format)
+                val geometry = route.getJSONObject("geometry")
+                val coordinates = geometry.getJSONArray("coordinates")
+
+                // Parse into GeoPoints
+                val routePoints = mutableListOf<GeoPoint>()
+
+                // For long routes, downsample points
+                val stride = if (coordinates.length() > 100) 2 else 1
+
+                for (i in 0 until coordinates.length() step stride) {
+                    val coord = coordinates.getJSONArray(i)
+                    val lon = coord.getDouble(0)
+                    val lat = coord.getDouble(1)
+                    routePoints.add(GeoPoint(lat, lon))
+                }
+
+                // Ensure we always include the last point
+                if (routePoints.isEmpty() ||
+                    routePoints.last().latitude != coordinates.getJSONArray(coordinates.length() - 1).getDouble(1) ||
+                    routePoints.last().longitude != coordinates.getJSONArray(coordinates.length() - 1).getDouble(0)) {
+                    val lastCoord = coordinates.getJSONArray(coordinates.length() - 1)
+                    routePoints.add(GeoPoint(lastCoord.getDouble(1), lastCoord.getDouble(0)))
+                }
+
+                // Get first navigation instruction
+                val legs = route.getJSONArray("legs")
+                val firstLeg = legs.getJSONObject(0)
+                var firstInstruction = "Starten Sie Ihre Route"
+
+                if (firstLeg.has("steps")) {
+                    val steps = firstLeg.getJSONArray("steps")
+                    if (steps.length() > 0) {
+                        val firstStep = steps.getJSONObject(0)
+                        if (firstStep.has("maneuver")) {
+                            val maneuver = firstStep.getJSONObject("maneuver")
+                            val type = maneuver.getString("type")
+                            val modifier = maneuver.optString("modifier", "")
+
+                            // Convert instruction to German
+                            firstInstruction = when (type) {
+                                "depart" -> "Starten Sie Ihre Route"
+                                "turn" -> {
+                                    when (modifier) {
+                                        "right" -> "Biegen Sie rechts ab"
+                                        "left" -> "Biegen Sie links ab"
+                                        "slight right" -> "Biegen Sie leicht rechts ab"
+                                        "slight left" -> "Biegen Sie leicht links ab"
+                                        "sharp right" -> "Biegen Sie scharf rechts ab"
+                                        "sharp left" -> "Biegen Sie scharf links ab"
+                                        "straight" -> "Geradeaus weiter"
+                                        else -> "Biegen Sie ab"
+                                    }
+                                }
+                                "continue" -> "Weiter geradeaus"
+                                "arrive" -> "Sie haben Ihr Ziel erreicht"
+                                else -> "Folgen Sie der Strecke"
+                            }
+                        }
+                    }
+                }
+
+                return@withContext Triple(routePoints, distance, firstInstruction)
+            } finally {
+                connection.disconnect()
+            }
+        } catch (e: Exception) {
+            Log.e("DirectionMapHelpers", "Error fetching OSRM route: ${e.message}", e)
+            return@withContext null
+        }
+    }
+
+    /**
+     * Enhanced street route algorithm that creates more realistic paths
+     * Replace this method in your DirectionMapHelpers class
+     */
+    fun createSimplifiedStreetRoute(
+        startPoint: GeoPoint,
+        endPoint: GeoPoint
+    ): List<GeoPoint> {
+        val points = mutableListOf<GeoPoint>()
+
+        // Always start with the start point
+        points.add(startPoint)
+
+        // Calculate direct distance and angle
+        val distance = calculateDistance(
+            startPoint.latitude, startPoint.longitude,
+            endPoint.latitude, endPoint.longitude
+        )
+
+        val bearing = calculateBearing(
+            startPoint.latitude, startPoint.longitude,
+            endPoint.latitude, endPoint.longitude
+        )
+
+        // Based on the bearing, determine our approach
+        // For longer distances, use a multi-point approach
+        if (distance > 200) {
+            // Calculate delta values
+            val latDelta = endPoint.latitude - startPoint.latitude
+            val lonDelta = endPoint.longitude - startPoint.longitude
+
+            // Use an L-shape approach with intermediate points
+            if (Math.abs(latDelta) > Math.abs(lonDelta)) {
+                // Vertical first, then horizontal
+
+                // First move vertically 80%
+                val midPoint1 = GeoPoint(
+                    startPoint.latitude + (latDelta * 0.8),
+                    startPoint.longitude
+                )
+                points.add(midPoint1)
+
+                // Then move horizontally
+                points.add(GeoPoint(
+                    startPoint.latitude + (latDelta * 0.8),
+                    endPoint.longitude
+                ))
+            } else {
+                // Horizontal first, then vertical
+
+                // First move horizontally 80%
+                val midPoint1 = GeoPoint(
+                    startPoint.latitude,
+                    startPoint.longitude + (lonDelta * 0.8)
+                )
+                points.add(midPoint1)
+
+                // Then move vertically
+                points.add(GeoPoint(
+                    endPoint.latitude,
+                    startPoint.longitude + (lonDelta * 0.8)
+                ))
+            }
+        } else {
+            // For shorter routes, use a simpler zigzag approach
+
+            // Add a midpoint with slight offset to create a zigzag
+            val midPoint = GeoPoint(
+                (startPoint.latitude + endPoint.latitude) / 2,
+                (startPoint.longitude + endPoint.longitude) / 2
+            )
+
+            // Offset the midpoint perpendicular to the route direction
+            val offsetLatitude = Math.cos(Math.toRadians(bearing + 90)) * 0.0003
+            val offsetLongitude = Math.sin(Math.toRadians(bearing + 90)) * 0.0003
+
+            val offsetMidPoint = GeoPoint(
+                midPoint.latitude + offsetLatitude,
+                midPoint.longitude + offsetLongitude
+            )
+
+            points.add(offsetMidPoint)
+        }
+
+        // Add end point
+        points.add(endPoint)
+
+        return points
+    }
+    /**
+     * This method forces the map to use L-shaped routes by adding it to the DirectionMapComponent class.
+     * Insert this method call at the beginning of your map initialization.
+     */
+    private fun forceStreetBasedRoute(
+        mapView: MapView,
+        startPoint: GeoPoint,
+        endPoint: GeoPoint,
+        routeColor: Int,
+        userLocationColor: Int,
+        destinationColor: Int,
+        context: Context
+    ) {
+        // Create an L-shaped route directly
+        val points = mutableListOf<GeoPoint>()
+        points.add(startPoint)
+
+        // Calculate if we should move horizontally or vertically first
+        val latDifference = Math.abs(endPoint.latitude - startPoint.latitude)
+        val lonDifference = Math.abs(endPoint.longitude - startPoint.longitude)
+
+        if (latDifference > lonDifference) {
+            // Move vertically first, then horizontally
+            points.add(GeoPoint(endPoint.latitude, startPoint.longitude))
+        } else {
+            // Move horizontally first, then vertically
+            points.add(GeoPoint(startPoint.latitude, endPoint.longitude))
+        }
+
+        points.add(endPoint)
+
+        // Clear existing overlays but keep rotation
+        val existingOverlays = mapView.overlays.filter { it is RotationGestureOverlay }
+        mapView.overlays.clear()
+        mapView.overlays.addAll(existingOverlays)
+
+        // Add the L-shaped route
+        val helpers = DirectionMapHelpers
+        helpers.addDirectionRoute(
+            mapView,
+            startPoint,
+            endPoint,
+            points,
+            routeColor,
+            userLocationColor,
+            destinationColor,
+            context
+        )
+
+        // Force map refresh
+        mapView.invalidate()
+    }
+
+    /**
+     * Add route line, direction arrows, and markers for the journey with performance optimizations.
+     */
+    fun addDirectionRoute(
+        mapView: MapView,
+        startPoint: GeoPoint,
+        endPoint: GeoPoint,
+        routePoints: List<GeoPoint>,
+        routeColor: Int,
+        userLocationColor: Int,
+        destinationColor: Int,
+        context: Context
+    ) {
+        // Destination marker
+        val destinationMarker = Marker(mapView).apply {
+            position = endPoint
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            icon = createCustomPin(context, destinationColor)
+            title = "Ziel"
+        }
+        mapView.overlays.add(destinationMarker)
+
+        // Main route line
+        if (routePoints.size >= 2) {
+            val routeLine = Polyline(mapView).apply {
+                setPoints(routePoints)
+                outlinePaint.color = routeColor
+                outlinePaint.strokeWidth = 10f
+                outlinePaint.strokeCap = Paint.Cap.ROUND
+                outlinePaint.strokeJoin = Paint.Join.ROUND
+                outlinePaint.isAntiAlias = true
+            }
+            mapView.overlays.add(routeLine)
+        } else {
+            // Fallback to direct line if not enough points
+            val directLine = Polyline(mapView).apply {
+                setPoints(listOf(startPoint, endPoint))
+                outlinePaint.color = routeColor
+                outlinePaint.strokeWidth = 10f
+                outlinePaint.strokeCap = Paint.Cap.ROUND
+                outlinePaint.strokeJoin = Paint.Join.ROUND
+                outlinePaint.isAntiAlias = true
+            }
+            mapView.overlays.add(directLine)
+        }
+
+        // Add user location marker
+        val userMarker = Marker(mapView).apply {
+            position = startPoint
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            icon = createGlowingLocationMarker(context, userLocationColor)
+            title = null
+            setInfoWindow(null)
+        }
+        mapView.overlays.add(userMarker)
+
+        // Limit number of direction arrows for performance
+        if (routePoints.size > 3) {
+            addOptimizedDirectionArrows(mapView, routePoints, routeColor, context)
+        }
+
+        // Refresh the map
+        mapView.invalidate()
+    }
     /**
      * Create a small arrow icon for direction indicators along the route.
      */
@@ -138,403 +675,50 @@ object DirectionMapHelpers {
     }
 
     /**
-     * Fetch route from OSRM API. Returns a Triple with:
-     * - List of route points
-     * - Total distance in meters
-     * - First navigation instruction
+     * Add optimized direction arrows (fewer arrows for better performance)
      */
-    suspend fun fetchOsrmRoute(
-        startLon: Double, startLat: Double,
-        endLon: Double, endLat: Double
-    ): Triple<List<GeoPoint>, Double, String>? = withContext(Dispatchers.IO) {
-        try {
-            // OSRM API URL for foot navigation with proper parameters to ensure street routing
-            // geometries=geojson ensures we get detailed path information
-            // overview=full ensures we get all route points
-            // steps=true ensures we get turn-by-turn information
-            val url = URL("https://router.project-osrm.org/route/v1/foot/$startLon,$startLat;$endLon,$endLat?overview=full&steps=true&geometries=geojson&alternatives=false")
-
-            Log.d("DirectionMapHelpers", "Requesting OSRM route: $url")
-
-            val connection = url.openConnection() as HttpURLConnection
-            connection.connectTimeout = 5000 // 5 seconds timeout - reduced for better performance
-            connection.readTimeout = 7000 // 7 seconds read timeout
-            connection.useCaches = true // Use caching for better performance
-
-            val responseCode = connection.responseCode
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                Log.e("DirectionMapHelpers", "HTTP error code: $responseCode")
-                return@withContext null
-            }
-
-            val response = connection.inputStream.bufferedReader().use { it.readText() }
-
-            val jsonResponse = JSONObject(response)
-
-            // Check if route was found
-            if (jsonResponse.getString("code") != "Ok") {
-                Log.e("DirectionMapHelpers", "OSRM Error: ${jsonResponse.getString("code")}")
-                return@withContext null
-            }
-
-            val routes = jsonResponse.getJSONArray("routes")
-            if (routes.length() == 0) {
-                Log.e("DirectionMapHelpers", "OSRM returned no routes")
-                return@withContext null
-            }
-
-            val route = routes.getJSONObject(0)
-            val legs = route.getJSONArray("legs")
-            val firstLeg = legs.getJSONObject(0)
-
-            // Get total distance in meters
-            val distance = route.getDouble("distance")
-
-            // Extract the geometry (GeoJSON format)
-            val geometry = route.getJSONObject("geometry")
-            val coordinates = geometry.getJSONArray("coordinates")
-
-            // Parse into GeoPoints
-            val routePoints = mutableListOf<GeoPoint>()
-            for (i in 0 until coordinates.length()) {
-                val coord = coordinates.getJSONArray(i)
-                // GeoJSON format is [longitude, latitude]
-                val lon = coord.getDouble(0)
-                val lat = coord.getDouble(1)
-                routePoints.add(GeoPoint(lat, lon))
-            }
-
-            // Ensure we have enough points for a proper route visualization
-            // If needed, interpolate additional points between the existing ones
-            val enhancedRoutePoints = if (routePoints.size < 10 && routePoints.size >= 2) {
-                interpolateRoutePoints(routePoints)
-            } else {
-                routePoints
-            }
-
-            Log.d("DirectionMapHelpers", "Parsed ${enhancedRoutePoints.size} route points")
-
-            // Get first navigation instruction
-            var firstInstruction = "Starten Sie Ihre Route"
-            if (firstLeg.has("steps")) {
-                val steps = firstLeg.getJSONArray("steps")
-                if (steps.length() > 0) {
-                    val firstStep = steps.getJSONObject(0)
-                    if (firstStep.has("maneuver")) {
-                        val maneuver = firstStep.getJSONObject("maneuver")
-                        val type = maneuver.getString("type")
-                        val modifier = maneuver.optString("modifier", "")
-
-                        // Convert instruction to German
-                        firstInstruction = when (type) {
-                            "depart" -> "Starten Sie Ihre Route"
-                            "turn" -> {
-                                when (modifier) {
-                                    "right" -> "Biegen Sie rechts ab"
-                                    "left" -> "Biegen Sie links ab"
-                                    "slight right" -> "Biegen Sie leicht rechts ab"
-                                    "slight left" -> "Biegen Sie leicht links ab"
-                                    "sharp right" -> "Biegen Sie scharf rechts ab"
-                                    "sharp left" -> "Biegen Sie scharf links ab"
-                                    "straight" -> "Geradeaus weiter"
-                                    else -> "Biegen Sie ab"
-                                }
-                            }
-                            "continue" -> "Weiter geradeaus"
-                            "arrive" -> "Sie haben Ihr Ziel erreicht"
-                            else -> "Folgen Sie der Strecke"
-                        }
-                    }
-                }
-            }
-
-            Log.d("DirectionMapHelpers", "First instruction: $firstInstruction")
-            return@withContext Triple(enhancedRoutePoints, distance, firstInstruction)
-        } catch (e: Exception) {
-            Log.e("DirectionMapHelpers", "Error fetching OSRM route: ${e.message}", e)
-            return@withContext null
-        }
-    }
-
-    /**
-     * Interpolate additional points between existing route points to ensure smooth
-     * rendering of the route line, especially when there are very few points.
-     */
-    private fun interpolateRoutePoints(originalPoints: List<GeoPoint>): List<GeoPoint> {
-        if (originalPoints.size < 2) return originalPoints
-
-        val interpolatedPoints = mutableListOf<GeoPoint>()
-
-        // Add the first point
-        interpolatedPoints.add(originalPoints.first())
-
-        // Interpolate between each pair of points
-        for (i in 0 until originalPoints.size - 1) {
-            val startPoint = originalPoints[i]
-            val endPoint = originalPoints[i + 1]
-
-            // Calculate distance between points
-            val distance = calculateDistance(
-                startPoint.latitude, startPoint.longitude,
-                endPoint.latitude, endPoint.longitude
-            )
-
-            // If points are far apart, add interpolated points
-            if (distance > 100) { // For points more than 100m apart
-                val segmentCount = (distance / 50).toInt() // One point every 50 meters
-
-                for (j in 1 until segmentCount) {
-                    val fraction = j.toDouble() / segmentCount
-
-                    // Linear interpolation between points
-                    val lat = startPoint.latitude + fraction * (endPoint.latitude - startPoint.latitude)
-                    val lon = startPoint.longitude + fraction * (endPoint.longitude - startPoint.longitude)
-
-                    interpolatedPoints.add(GeoPoint(lat, lon))
-                }
-            }
-
-            // Add the end point
-            interpolatedPoints.add(endPoint)
-        }
-
-        return interpolatedPoints
-    }
-
-    /**
-     * Get street data to help with routing visualization
-     */
-    suspend fun fetchAllStreets(
-        startLon: Double, startLat: Double,
-        endLon: Double, endLat: Double
-    ): List<GeoPoint> = withContext(Dispatchers.IO) {
-        try {
-            // Instead of a complex Overpass query, let's create a more realistic route
-            return@withContext createRealisticRoute(
-                GeoPoint(startLat, startLon),
-                GeoPoint(endLat, endLon)
-            )
-        } catch (e: Exception) {
-            Log.e("DirectionMapHelpers", "Error fetching street data: ${e.message}", e)
-
-            // Return a direct route as fallback
-            return@withContext createDirectRoute(
-                GeoPoint(startLat, startLon),
-                GeoPoint(endLat, endLon)
-            )
-        }
-    }
-
-    /**
-     * Create a fallback direct route with some interpolated points
-     */
-    fun createDirectRoute(
-        startPoint: GeoPoint,
-        endPoint: GeoPoint,
-        numWaypoints: Int = 10
-    ): List<GeoPoint> {
-        val points = mutableListOf<GeoPoint>()
-        points.add(startPoint)
-
-        // Add some intermediate points to make the route look more natural
-        for (i in 1..numWaypoints) {
-            val fraction = i.toDouble() / (numWaypoints + 1)
-            val lat = startPoint.latitude + fraction * (endPoint.latitude - startPoint.latitude)
-            val lon = startPoint.longitude + fraction * (endPoint.longitude - startPoint.longitude)
-
-            // Add small random variation to make it look less straight
-            val latVariation = (Math.random() - 0.5) * 0.0005 // ~50m random variation
-            val lonVariation = (Math.random() - 0.5) * 0.0005
-
-            points.add(GeoPoint(lat + latVariation, lon + lonVariation))
-        }
-
-        points.add(endPoint)
-        return points
-    }
-
-    /**
-     * Create a more realistic route path
-     */
-    fun createRealisticRoute(
-        startPoint: GeoPoint,
-        endPoint: GeoPoint,
-        numWaypoints: Int = 8
-    ): List<GeoPoint> {
-        val points = mutableListOf<GeoPoint>()
-        points.add(startPoint)
-
-        // Get bearing from start to end
-        val bearing = calculateBearing(
-            startPoint.latitude, startPoint.longitude,
-            endPoint.latitude, endPoint.longitude
-        )
-
-        // Create a path that resembles a road network by using 90 degree segments
-        var currentLat = startPoint.latitude
-        var currentLon = startPoint.longitude
-
-        // Decide if we go horizontal first or vertical first based on bearing
-        val horizontalFirst = bearing in 45.0..135.0 || bearing in 225.0..315.0
-
-        if (horizontalFirst) {
-            // Move horizontally first
-            val destLon = endPoint.longitude
-            val lonDiff = destLon - currentLon
-            val midLon = currentLon + (lonDiff * 0.8) // Go 80% of the way horizontally
-
-            points.add(GeoPoint(currentLat, midLon))
-            currentLon = midLon
-
-            // Then move vertically toward destination
-            points.add(GeoPoint(endPoint.latitude, currentLon))
-        } else {
-            // Move vertically first
-            val destLat = endPoint.latitude
-            val latDiff = destLat - currentLat
-            val midLat = currentLat + (latDiff * 0.8) // Go 80% of the way vertically
-
-            points.add(GeoPoint(midLat, currentLon))
-            currentLat = midLat
-
-            // Then move horizontally toward destination
-            points.add(GeoPoint(currentLat, endPoint.longitude))
-        }
-
-        // Add the final destination
-        points.add(endPoint)
-
-        return points
-    }
-
-    /**
-     * Add route line, direction arrows, and markers for the journey.
-     */
-    fun addDirectionRoute(
-        mapView: MapView,
-        startPoint: GeoPoint,
-        endPoint: GeoPoint,
-        routePoints: List<GeoPoint>,
-        routeColor: Int,
-        userLocationColor: Int,
-        destinationColor: Int,
-        context: Context
-    ) {
-        // Destination marker with red color
-        val destinationMarker = Marker(mapView).apply {
-            position = endPoint
-            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-
-            // Create custom red pin
-            val pinDrawable = createCustomPin(context, destinationColor)
-            icon = pinDrawable
-
-            title = "Ziel"
-            // No snippet to keep UI clean for navigation
-        }
-        mapView.overlays.add(destinationMarker)
-
-        // Main route line - thick green line like in navigation apps
-        if (routePoints.size >= 2) {
-            val routeLine = Polyline(mapView).apply {
-                setPoints(routePoints)
-                outlinePaint.color = routeColor
-                outlinePaint.strokeWidth = 10f // Thick line for visibility
-                outlinePaint.strokeCap = Paint.Cap.ROUND
-                outlinePaint.strokeJoin = Paint.Join.ROUND
-                outlinePaint.isAntiAlias = true
-            }
-            mapView.overlays.add(routeLine)
-        } else {
-            // Fallback to direct line if not enough points
-            val directLine = Polyline(mapView).apply {
-                setPoints(listOf(startPoint, endPoint))
-                outlinePaint.color = routeColor
-                outlinePaint.strokeWidth = 10f
-                outlinePaint.strokeCap = Paint.Cap.ROUND
-                outlinePaint.strokeJoin = Paint.Join.ROUND
-                outlinePaint.isAntiAlias = true
-            }
-            mapView.overlays.add(directLine)
-        }
-
-        // Add glowing user location marker
-        val userMarker = Marker(mapView).apply {
-            position = startPoint
-            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-
-            // Use the glowing marker drawable
-            icon = createGlowingLocationMarker(context, userLocationColor)
-
-            title = null // No title for cleaner navigation view
-            setInfoWindow(null) // No info window
-        }
-        mapView.overlays.add(userMarker)
-
-        // Add direction arrows along the route
-        addDirectionArrows(mapView, routePoints, routeColor, context)
-
-        // Refresh the map
-        mapView.invalidate()
-    }
-
-    /**
-     * Add direction arrows along the route to indicate travel direction.
-     */
-    fun addDirectionArrows(
+    private fun addOptimizedDirectionArrows(
         mapView: MapView,
         routePoints: List<GeoPoint>,
         arrowColor: Int,
         context: Context
     ) {
-        // Need at least 2 points for direction
-        if (routePoints.size <= 1) return
+        // Need at least 3 points for a meaningful route with direction
+        if (routePoints.size < 3) return
 
-        // Calculate total distance of the route
-        var totalDistance = 0.0
-        for (i in 0 until routePoints.size - 1) {
-            totalDistance += calculateDistance(
-                routePoints[i].latitude, routePoints[i].longitude,
-                routePoints[i + 1].latitude, routePoints[i + 1].longitude
-            )
+        // Calculate total distance
+        val totalDistance = calculateRouteDistance(routePoints)
+
+        // Optimize number of arrows based on route length
+        val numArrows = when {
+            totalDistance < 500 -> 1  // Short route: just 1 arrow
+            totalDistance < 2000 -> 2 // Medium route: 2 arrows
+            else -> 3                 // Long route: 3 arrows
         }
 
-        // Place arrows every X meters depending on total distance
-        val arrowSpacing = when {
-            totalDistance < 100 -> 20.0 // Close - show more arrows
-            totalDistance < 500 -> 50.0
-            totalDistance < 1000 -> 100.0
-            totalDistance < 5000 -> 500.0
-            else -> 1000.0 // Far away - fewer arrows
-        }
+        // Place arrows at evenly spaced intervals
+        for (i in 1..numArrows) {
+            val fraction = i.toDouble() / (numArrows + 1)
+            val targetDistance = totalDistance * fraction
 
-        // Calculate number of arrows (at least 1, at most 20 for performance)
-        val numArrows = min(20, max(1, (totalDistance / arrowSpacing).toInt()))
-
-        if (numArrows > 1) {
-            // Place arrows at equidistant segments along the route
+            // Find the appropriate segment
             var currentDistance = 0.0
-            val segmentDistance = totalDistance / numArrows
-            var nextArrowAt = segmentDistance
-
-            for (i in 0 until routePoints.size - 1) {
+            for (j in 0 until routePoints.size - 1) {
                 val segmentLength = calculateDistance(
-                    routePoints[i].latitude, routePoints[i].longitude,
-                    routePoints[i + 1].latitude, routePoints[i + 1].longitude
+                    routePoints[j].latitude, routePoints[j].longitude,
+                    routePoints[j + 1].latitude, routePoints[j + 1].longitude
                 )
 
-                currentDistance += segmentLength
+                val nextDistance = currentDistance + segmentLength
 
-                // If we've passed the distance for the next arrow
-                if (currentDistance >= nextArrowAt) {
-                    // Calculate what fraction of the current segment to use
-                    val segmentFraction = (segmentLength - (currentDistance - nextArrowAt)) / segmentLength
+                if (nextDistance >= targetDistance) {
+                    // This is the segment where our arrow should be placed
+                    val segmentFraction = (targetDistance - currentDistance) / segmentLength
 
-                    // Get coordinates for arrow
-                    val arrowLat = routePoints[i].latitude +
-                            segmentFraction * (routePoints[i + 1].latitude - routePoints[i].latitude)
-                    val arrowLon = routePoints[i].longitude +
-                            segmentFraction * (routePoints[i + 1].longitude - routePoints[i].longitude)
+                    val arrowLat = routePoints[j].latitude +
+                            segmentFraction * (routePoints[j + 1].latitude - routePoints[j].latitude)
+                    val arrowLon = routePoints[j].longitude +
+                            segmentFraction * (routePoints[j + 1].longitude - routePoints[j].longitude)
 
                     // Create arrow marker
                     val arrowPoint = GeoPoint(arrowLat, arrowLon)
@@ -542,56 +726,24 @@ object DirectionMapHelpers {
                         position = arrowPoint
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
 
-                        // Calculate bearing based on the route segment
+                        // Calculate bearing
                         val bearing = calculateBearing(
-                            routePoints[i].latitude, routePoints[i].longitude,
-                            routePoints[i + 1].latitude, routePoints[i + 1].longitude
+                            routePoints[j].latitude, routePoints[j].longitude,
+                            routePoints[j + 1].latitude, routePoints[j + 1].longitude
                         )
 
-                        // Set rotation angle
                         rotation = bearing.toFloat()
-
-                        // Create small arrow icon
                         icon = createDirectionArrow(context, arrowColor)
-
-                        // No info window or title
                         setInfoWindow(null)
                         title = null
                     }
 
                     mapView.overlays.add(arrowMarker)
-
-                    // Set the next arrow distance target
-                    nextArrowAt += segmentDistance
+                    break
                 }
+
+                currentDistance = nextDistance
             }
-        } else if (numArrows == 1 && routePoints.size >= 3) {
-            // If only one arrow, place it in the middle of the route
-            val middleIndex = routePoints.size / 2
-
-            // Create arrow marker at middle point
-            val arrowMarker = Marker(mapView).apply {
-                position = routePoints[middleIndex]
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-
-                // Calculate bearing based on surrounding points
-                val bearing = calculateBearing(
-                    routePoints[middleIndex - 1].latitude, routePoints[middleIndex - 1].longitude,
-                    routePoints[middleIndex + 1].latitude, routePoints[middleIndex + 1].longitude
-                )
-
-                // Set rotation angle
-                rotation = bearing.toFloat()
-
-                // Create small arrow icon
-                icon = createDirectionArrow(context, arrowColor)
-
-                // No info window or title
-                setInfoWindow(null)
-                title = null
-            }
-
-            mapView.overlays.add(arrowMarker)
         }
     }
 
@@ -668,13 +820,5 @@ object DirectionMapHelpers {
         }
 
         return bearing
-    }
-
-    /**
-     * Get closest ahead instruction from the route
-     */
-    fun getClosestAheadInstruction(userPoint: GeoPoint, routePoints: List<GeoPoint>): String {
-        // Default instruction if we can't determine a better one
-        return "Folgen Sie der Strecke"
     }
 }

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <external-path name="osmdroid" path="osmdroid" />
+    <cache-path name="osmdroid_cache" path="osmdroid" />
+    <files-path name="osmdroid_files" path="osmdroid" />
+</paths>

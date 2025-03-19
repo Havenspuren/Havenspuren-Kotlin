@@ -1,6 +1,4 @@
 package com.example.havenspure_kotlin_prototype.Map
-
-import android.content.Context
 import android.os.Handler
 import android.os.HandlerThread
 import android.preference.PreferenceManager
@@ -96,7 +94,11 @@ fun DirectionMapComponent(
     val routePoints = remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
     val shouldFollowUser = remember { mutableStateOf(false) }
     val routeFetched = remember { mutableStateOf(false) }
+
+    // Enhanced loading states
     val isLoading = remember { mutableStateOf(true) } // Start with loading state
+    val isInitialLoading = remember { mutableStateOf(true) } // Track initial loading
+    val isRerouting = remember { mutableStateOf(false) } // Track rerouting state
 
     // Calculate initial distance
     val initialDistance = if (userLocation != null) {
@@ -147,65 +149,12 @@ fun DirectionMapComponent(
     // Add rotation gesture overlay
     val rotationGestureOverlay = remember { RotationGestureOverlay(mapView) }
 
-    /**
-     * Forces the map to use L-shaped routes
-     */
-    fun forceStreetBasedRoute(
-        mapView: MapView,
-        startPoint: GeoPoint,
-        endPoint: GeoPoint,
-        routeColor: Int,
-        userLocationColor: Int,
-        destinationColor: Int,
-        context: Context
-    ) {
-        // Create an L-shaped route directly
-        val points = mutableListOf<GeoPoint>()
-        points.add(startPoint)
-
-        // Calculate if we should move horizontally or vertically first
-        val latDifference = Math.abs(endPoint.latitude - startPoint.latitude)
-        val lonDifference = Math.abs(endPoint.longitude - startPoint.longitude)
-
-        if (latDifference > lonDifference) {
-            // Move vertically first, then horizontally
-            points.add(GeoPoint(endPoint.latitude, startPoint.longitude))
-        } else {
-            // Move horizontally first, then vertically
-            points.add(GeoPoint(startPoint.latitude, endPoint.longitude))
-        }
-
-        points.add(endPoint)
-
-        // Clear existing overlays but keep rotation
-        val existingOverlays = mapView.overlays.filter { it is RotationGestureOverlay }
-        mapView.overlays.clear()
-        mapView.overlays.addAll(existingOverlays)
-
-        // Add the L-shaped route
-        val helpers = DirectionMapHelpers
-        helpers.addDirectionRoute(
-            mapView,
-            startPoint,
-            endPoint,
-            points,
-            routeColor,
-            userLocationColor,
-            destinationColor,
-            context
-        )
-
-        // Update route points state
-        routePoints.value = points
-
-        // Force map refresh
-        mapView.invalidate()
-    }
-
     // Fetch and display the route immediately with fallback
     LaunchedEffect(Unit) {
         if (!routeFetched.value) {
             isLoading.value = true
+            isInitialLoading.value = true
+            Log.d("DirectionMap", "Initial route loading started")
 
             // Show fallback route immediately while fetching proper route
             withContext(Dispatchers.Main) {
@@ -228,7 +177,7 @@ fun DirectionMapComponent(
                 })
 
                 // Force L-shaped route immediately
-                forceStreetBasedRoute(
+                val initialPoints = helpers.forceStreetBasedRoute(
                     mapView,
                     startPoint,
                     destinationPoint,
@@ -238,6 +187,9 @@ fun DirectionMapComponent(
                     context
                 )
 
+                // Update route points state
+                routePoints.value = initialPoints
+
                 // Calculate distance and direction
                 val quickDistance = helpers.calculateDistance(
                     startPoint.latitude, startPoint.longitude,
@@ -245,14 +197,15 @@ fun DirectionMapComponent(
                 )
                 distanceRemaining.value = helpers.formatDistance(quickDistance)
 
-                val quickDirection = helpers.getDirectionText(
+                // Use enhanced directions even for initial route
+                val quickDirection = helpers.getFormattedDirections(
                     LocationData(startPoint.latitude, startPoint.longitude),
-                    LocationData(destinationPoint.latitude, destinationPoint.longitude)
+                    initialPoints,
+                    destinationLocation
                 )
                 currentDirection.value = quickDirection
 
                 mapInitialized.value = true
-                isLoading.value = false
             }
 
             // In parallel, fetch better route
@@ -270,7 +223,13 @@ fun DirectionMapComponent(
                     withContext(Dispatchers.Main) {
                         routePoints.value = routeResult.first
                         distanceRemaining.value = helpers.formatDistance(routeResult.second)
-                        currentDirection.value = routeResult.third
+
+                        // Use the enhanced directions
+                        currentDirection.value = helpers.getFormattedDirections(
+                            LocationData(startPoint.latitude, startPoint.longitude),
+                            routeResult.first,
+                            destinationLocation
+                        )
 
                         // Update map with better route
                         val existingOverlays = mapView.overlays.filter { it is RotationGestureOverlay }
@@ -289,143 +248,219 @@ fun DirectionMapComponent(
                         )
 
                         routeFetched.value = true
+                        Log.d("DirectionMap", "Better route loaded and displayed")
                     }
                 } else {
                     // The fetched route is also a simple route, keep our L-shaped one
                     routeFetched.value = true
+                    Log.d("DirectionMap", "Using L-shaped route (no better route available)")
                 }
             } catch (e: Exception) {
                 Log.e("DirectionMap", "Error fetching route: ${e.message}")
                 // Already displaying L-shaped route
                 routeFetched.value = true
+            } finally {
+                // Finish loading regardless of the outcome
+                isLoading.value = false
+                isInitialLoading.value = false
+                Log.d("DirectionMap", "Initial route loading completed")
             }
         }
     }
 
     // Update map efficiently when user location changes
     LaunchedEffect(userLocation) {
-        if (mapInitialized.value && userLocation != null && !mapUpdateInProgress.value) {
-            mapUpdateInProgress.value = true
+        if (mapInitialized.value && userLocation != null) {
+            Log.d("DirectionMap", "User location update received: $userLocation")
 
-            // New user point
-            val newUserPoint = GeoPoint(userLocation.latitude, userLocation.longitude)
+            if (!mapUpdateInProgress.value) {
+                mapUpdateInProgress.value = true
 
-            try {
-                // Only recenter map if follow mode is active
-                if (shouldFollowUser.value) {
-                    mapView.controller.animateTo(newUserPoint)
-                }
+                // New user point
+                val newUserPoint = GeoPoint(userLocation.latitude, userLocation.longitude)
 
-                // Check if we need to request a new route
-                val shouldRefreshRoute = if (routePoints.value.isNotEmpty()) {
-                    // Calculate distance to closest point on route
-                    val closestPointDistance = routePoints.value.minOf { routePoint ->
-                        helpers.calculateDistance(
-                            newUserPoint.latitude, newUserPoint.longitude,
-                            routePoint.latitude, routePoint.longitude
-                        )
+                try {
+                    // Only recenter map if follow mode is active
+                    if (shouldFollowUser.value) {
+                        mapView.controller.animateTo(newUserPoint)
+                        Log.d("DirectionMap", "Following user - map centered")
                     }
 
-                    // If we're more than 50 meters from the route, recalculate
-                    closestPointDistance > 50
-                } else {
-                    // No route exists yet, so we need to calculate one
-                    true
-                }
-
-                if (shouldRefreshRoute) {
-                    // Don't set loading state if we already have a route
-                    if (routePoints.value.isEmpty()) {
-                        isLoading.value = true
-                    }
-
-                    // Show immediate L-shaped route update with updated position
-                    withContext(Dispatchers.Main) {
-                        // Force L-shaped route with updated position
-                        forceStreetBasedRoute(
-                            mapView,
-                            newUserPoint,
-                            destinationPoint,
-                            routeColor,
-                            userLocationColor,
-                            destinationColor,
-                            context
-                        )
-
-                        // Update distance and direction
-                        val newDistance = helpers.calculateDistance(
-                            newUserPoint.latitude, newUserPoint.longitude,
-                            destinationPoint.latitude, destinationPoint.longitude
-                        )
-                        distanceRemaining.value = helpers.formatDistance(newDistance)
-
-                        val newDirection = helpers.getDirectionText(
-                            LocationData(newUserPoint.latitude, newUserPoint.longitude),
-                            LocationData(destinationPoint.latitude, destinationPoint.longitude)
-                        )
-                        currentDirection.value = newDirection
-
-                        isLoading.value = false
-                        mapUpdateInProgress.value = false
-                    }
-                } else {
-                    // Just update user marker position without refetching the route
-                    withContext(Dispatchers.Main) {
-                        try {
-                            // Preserve rotation overlay when clearing
-                            val existingOverlays = mapView.overlays.filter { it is RotationGestureOverlay }
-                            mapView.overlays.clear()
-                            mapView.overlays.addAll(existingOverlays)
-
-                            // Re-add existing route
-                            helpers.addDirectionRoute(
-                                mapView,
-                                newUserPoint,
-                                destinationPoint,
-                                routePoints.value,
-                                routeColor,
-                                userLocationColor,
-                                destinationColor,
-                                context
+                    // Check if we need to request a new route
+                    val shouldRefreshRoute = if (routePoints.value.isNotEmpty()) {
+                        // Calculate distance to closest point on route
+                        val closestPointDistance = routePoints.value.minOf { routePoint ->
+                            helpers.calculateDistance(
+                                newUserPoint.latitude, newUserPoint.longitude,
+                                routePoint.latitude, routePoint.longitude
                             )
+                        }
 
-                            // Update distance to destination along route
-                            // Find closest point on route to current location
-                            var closestPointIndex = 0
-                            var minDistance = Double.MAX_VALUE
+                        // If we're more than 30 meters from the route, recalculate
+                        val isOffRoute = closestPointDistance > 30
 
-                            routePoints.value.forEachIndexed { index, point ->
-                                val dist = helpers.calculateDistance(
+                        // Set rerouting state if user is off route
+                        if (isOffRoute && !isRerouting.value) {
+                            isRerouting.value = true
+                            isLoading.value = true
+                            Log.d("DirectionMap", "User is off route (${closestPointDistance.toInt()}m), rerouting...")
+                        }
+
+                        isOffRoute
+                    } else {
+                        // No route exists yet, so we need to calculate one
+                        true
+                    }
+
+                    if (shouldRefreshRoute) {
+                        // Show immediate L-shaped route update with updated position
+                        withContext(Dispatchers.Main) {
+                            try {
+                                // Force L-shaped route with updated position
+                                val newPoints = helpers.forceStreetBasedRoute(
+                                    mapView,
+                                    newUserPoint,
+                                    destinationPoint,
+                                    routeColor,
+                                    userLocationColor,
+                                    destinationColor,
+                                    context
+                                )
+
+                                // Update route points
+                                routePoints.value = newPoints
+
+                                // Update distance and direction
+                                val newDistance = helpers.calculateDistance(
                                     newUserPoint.latitude, newUserPoint.longitude,
-                                    point.latitude, point.longitude
+                                    destinationPoint.latitude, destinationPoint.longitude
                                 )
-                                if (dist < minDistance) {
-                                    minDistance = dist
-                                    closestPointIndex = index
+                                distanceRemaining.value = helpers.formatDistance(newDistance)
+
+                                // Use enhanced directions
+                                val newDirection = helpers.getFormattedDirections(
+                                    LocationData(newUserPoint.latitude, newUserPoint.longitude),
+                                    newPoints,
+                                    destinationLocation
+                                )
+                                currentDirection.value = newDirection
+
+                                // Try to get a better route in the background
+                                launch {
+                                    try {
+                                        val betterRoute = helpers.getRoute(
+                                            newUserPoint.latitude, newUserPoint.longitude,
+                                            destinationPoint.latitude, destinationPoint.longitude,
+                                            context
+                                        )
+
+                                        // Only update if the fetched route has more than 3 points
+                                        if (betterRoute.first.size > 3) {
+                                            routePoints.value = betterRoute.first
+                                            distanceRemaining.value = helpers.formatDistance(betterRoute.second)
+
+                                            // Use enhanced directions
+                                            currentDirection.value = helpers.getFormattedDirections(
+                                                LocationData(newUserPoint.latitude, newUserPoint.longitude),
+                                                betterRoute.first,
+                                                destinationLocation
+                                            )
+
+                                            // Update map with better route
+                                            val existingOverlays = mapView.overlays.filter { it is RotationGestureOverlay }
+                                            mapView.overlays.clear()
+                                            mapView.overlays.addAll(existingOverlays)
+
+                                            helpers.addDirectionRoute(
+                                                mapView,
+                                                newUserPoint,
+                                                destinationPoint,
+                                                betterRoute.first,
+                                                routeColor,
+                                                userLocationColor,
+                                                destinationColor,
+                                                context
+                                            )
+
+                                            Log.d("DirectionMap", "Rerouting complete - better route applied")
+                                        } else {
+                                            Log.d("DirectionMap", "Rerouting complete - keeping L-shaped route")
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e("DirectionMap", "Error fetching better route: ${e.message}")
+                                        // Keep the L-shaped route if fetching fails
+                                    } finally {
+                                        isRerouting.value = false
+                                        isLoading.value = false
+                                        mapUpdateInProgress.value = false
+                                    }
                                 }
+                            } catch (e: Exception) {
+                                Log.e("DirectionMap", "Error in route update: ${e.message}")
+                                isRerouting.value = false
+                                isLoading.value = false
+                                mapUpdateInProgress.value = false
                             }
-
-                            // Calculate remaining distance along route
-                            var remainingDistance = 0.0
-                            for (i in closestPointIndex until routePoints.value.size - 1) {
-                                remainingDistance += helpers.calculateDistance(
-                                    routePoints.value[i].latitude, routePoints.value[i].longitude,
-                                    routePoints.value[i + 1].latitude, routePoints.value[i + 1].longitude
+                        }
+                    } else {
+                        // Just update user marker position without refetching the route
+                        withContext(Dispatchers.Main) {
+                            try {
+                                // Update just the user marker position
+                                helpers.updateUserMarkerPosition(
+                                    mapView,
+                                    newUserPoint,
+                                    userLocationColor,
+                                    context
                                 )
+
+                                // Update distance to destination along route
+                                // Find closest point on route to current location
+                                var closestPointIndex = 0
+                                var minDistance = Double.MAX_VALUE
+
+                                routePoints.value.forEachIndexed { index, point ->
+                                    val dist = helpers.calculateDistance(
+                                        newUserPoint.latitude, newUserPoint.longitude,
+                                        point.latitude, point.longitude
+                                    )
+                                    if (dist < minDistance) {
+                                        minDistance = dist
+                                        closestPointIndex = index
+                                    }
+                                }
+
+                                // Calculate remaining distance along route
+                                var remainingDistance = 0.0
+                                for (i in closestPointIndex until routePoints.value.size - 1) {
+                                    remainingDistance += helpers.calculateDistance(
+                                        routePoints.value[i].latitude, routePoints.value[i].longitude,
+                                        routePoints.value[i + 1].latitude, routePoints.value[i + 1].longitude
+                                    )
+                                }
+
+                                distanceRemaining.value = helpers.formatDistance(remainingDistance)
+
+                                // Update direction guidance using enhanced directions
+                                val updatedDirection = helpers.getFormattedDirections(
+                                    LocationData(newUserPoint.latitude, newUserPoint.longitude),
+                                    routePoints.value,
+                                    destinationLocation
+                                )
+                                currentDirection.value = updatedDirection
+
+                                Log.d("DirectionMap", "User marker position updated, staying on route")
+                            } finally {
+                                mapUpdateInProgress.value = false
                             }
-
-                            distanceRemaining.value = helpers.formatDistance(remainingDistance)
-
-                            // Ensure map is refreshed without changing camera position
-                            mapView.invalidate()
-                        } finally {
-                            mapUpdateInProgress.value = false
                         }
                     }
+                } catch (e: Exception) {
+                    mapUpdateInProgress.value = false
+                    Log.e("DirectionMap", "Error in location update: ${e.message}")
                 }
-            } catch (e: Exception) {
-                mapUpdateInProgress.value = false
-                Log.e("DirectionMap", "Error in location update: ${e.message}")
+            } else {
+                Log.d("DirectionMap", "Skipping location update - update already in progress")
             }
         }
     }
@@ -437,6 +472,7 @@ fun DirectionMapComponent(
                 Lifecycle.Event.ON_RESUME -> {
                     try {
                         mapView.onResume()
+                        Log.d("DirectionMap", "Map resumed")
                     } catch (e: Exception) {
                         Log.e("DirectionMap", "Error resuming: ${e.message}")
                     }
@@ -444,6 +480,7 @@ fun DirectionMapComponent(
                 Lifecycle.Event.ON_PAUSE -> {
                     try {
                         mapView.onPause()
+                        Log.d("DirectionMap", "Map paused")
                     } catch (e: Exception) {
                         Log.e("DirectionMap", "Error pausing: ${e.message}")
                     }
@@ -452,6 +489,7 @@ fun DirectionMapComponent(
                     try {
                         backgroundHandler.removeCallbacksAndMessages(null)
                         mapView.onDetach()
+                        Log.d("DirectionMap", "Map destroyed")
                     } catch (e: Exception) {
                         Log.e("DirectionMap", "Error destroying: ${e.message}")
                     }
@@ -468,6 +506,7 @@ fun DirectionMapComponent(
                 backgroundHandler.removeCallbacksAndMessages(null)
                 handlerThread.quitSafely()
                 mapView.onDetach()
+                Log.d("DirectionMap", "Map component disposed")
             } catch (e: Exception) {
                 Log.e("DirectionMap", "Error disposing: ${e.message}")
             }
@@ -520,36 +559,81 @@ fun DirectionMapComponent(
                 }
             )
 
-            // Smaller loading indicator
+            // Enhanced loading indicator with text
             if (isLoading.value) {
                 Surface(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(top = 16.dp)
-                        .size(60.dp),
-                    color = Color.White.copy(alpha = 0.8f),
-                    shape = MaterialTheme.shapes.small
+                        .padding(horizontal = 16.dp),
+                    color = Color.White.copy(alpha = 0.9f),
+                    shape = MaterialTheme.shapes.medium,
+                    shadowElevation = 4.dp
                 ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.fillMaxSize()
+                    Row(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         CircularProgressIndicator(
                             color = Color(0xFF009688),
-                            modifier = Modifier.size(40.dp),
-                            strokeWidth = 3.dp
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = if (isInitialLoading.value) "Route wird geladen..."
+                            else if (isRerouting.value) "Neue Route wird berechnet..."
+                            else "Aktualisiere...",
+                            color = Color(0xFF009688),
+                            fontWeight = FontWeight.Medium
                         )
                     }
                 }
             }
 
-            // Current location button
+            // Current location button - Enhanced with more reliable behavior
             FloatingActionButton(
                 onClick = {
-                    if (!mapUpdateInProgress.value && userLocation != null) {
+                    if (userLocation != null) {
+                        Log.d("DirectionMap", "Location button clicked, user location: $userLocation")
+
                         val userGeoPoint = GeoPoint(userLocation.latitude, userLocation.longitude)
+
+                        // First center the map
                         mapView.controller.animateTo(userGeoPoint)
+
+                        // Then ensure the user marker is updated
+                        helpers.updateUserMarkerPosition(
+                            mapView,
+                            userGeoPoint,
+                            userLocationColor,
+                            context
+                        )
+
                         shouldFollowUser.value = true
+
+                        // Update user position immediately if needed
+                        if (!mapUpdateInProgress.value && routePoints.value.isNotEmpty()) {
+                            // Calculate if we're off-route
+                            val closestPointDistance = routePoints.value.minOf { routePoint ->
+                                helpers.calculateDistance(
+                                    userGeoPoint.latitude, userGeoPoint.longitude,
+                                    routePoint.latitude, routePoint.longitude
+                                )
+                            }
+
+                            // If off-route, initiate rerouting
+                            if (closestPointDistance > 30 && !isRerouting.value) {
+                                isRerouting.value = true
+                                isLoading.value = true
+
+                                // This will trigger the LaunchedEffect(userLocation) and recalculate the route
+                                Log.d("DirectionMap", "Initiating reroute from location button")
+                            }
+                        }
+                    } else {
+                        Log.d("DirectionMap", "Cannot center: userLocation is null")
                     }
                 },
                 modifier = Modifier

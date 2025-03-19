@@ -1,5 +1,6 @@
 package com.example.havenspure_kotlin_prototype.Map.Routing
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -38,6 +39,9 @@ object DirectionMapHelpers {
 
     // Reduced timeouts for faster fallback
     private const val OSRM_TIMEOUT_MS = 5000L // 5 seconds
+
+    // Constants for user marker identification
+    private const val USER_MARKER_ID = "USER_MARKER"
 
     // File cache
     private var cacheDir: File? = null
@@ -88,13 +92,13 @@ object DirectionMapHelpers {
         centerPaint.style = Paint.Style.FILL
 
         // Draw outer glow
-        canvas.drawCircle(size/2f, size/2f, size/2f, outerGlowPaint)
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f, outerGlowPaint)
 
         // Draw middle glow
-        canvas.drawCircle(size/2f, size/2f, size/3f, middleGlowPaint)
+        canvas.drawCircle(size / 2f, size / 2f, size / 3f, middleGlowPaint)
 
         // Draw center dot
-        canvas.drawCircle(size/2f, size/2f, size/6f, centerPaint)
+        canvas.drawCircle(size / 2f, size / 2f, size / 6f, centerPaint)
 
         return BitmapDrawable(context.resources, bitmap)
     }
@@ -138,6 +142,36 @@ object DirectionMapHelpers {
     }
 
     /**
+     * Update only the user location marker on the map
+     */
+    fun updateUserMarkerPosition(
+        mapView: MapView,
+        userPoint: GeoPoint,
+        userLocationColor: Int,
+        context: Context
+    ) {
+        // Find and remove any existing user markers
+        val existingUserMarkers = mapView.overlays.filterIsInstance<Marker>()
+            .filter { it.id == USER_MARKER_ID }
+
+        mapView.overlays.removeAll(existingUserMarkers)
+
+        // Add new user marker
+        val userMarker = Marker(mapView).apply {
+            position = userPoint
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            icon = createGlowingLocationMarker(context, userLocationColor)
+            id = USER_MARKER_ID // Use a consistent identifier
+            title = null
+            setInfoWindow(null)
+        }
+        mapView.overlays.add(userMarker)
+
+        // Force refresh
+        mapView.invalidate()
+    }
+
+    /**
      * Optimized main route fetching method with quick fallback
      */
     suspend fun getRoute(
@@ -151,13 +185,18 @@ object DirectionMapHelpers {
         }
 
         // Create cache key
-        val cacheKey = "${startLat.roundTo(5)},${startLon.roundTo(5)}-${endLat.roundTo(5)},${endLon.roundTo(5)}"
+        val cacheKey =
+            "${startLat.roundTo(5)},${startLon.roundTo(5)}-${endLat.roundTo(5)},${endLon.roundTo(5)}"
 
         // Check memory cache first
         routeCache[cacheKey]?.let { cacheEntry ->
             if (!cacheEntry.isExpired()) {
                 Log.d("DirectionMapHelpers", "Using memory-cached route")
-                return@withContext Triple(cacheEntry.routePoints, cacheEntry.distance, cacheEntry.instruction)
+                return@withContext Triple(
+                    cacheEntry.routePoints,
+                    cacheEntry.distance,
+                    cacheEntry.instruction
+                )
             } else {
                 // Remove expired entry
                 routeCache.remove(cacheKey)
@@ -324,7 +363,8 @@ object DirectionMapHelpers {
     ): Triple<List<GeoPoint>, Double, String>? = withContext(Dispatchers.IO) {
         try {
             // OSRM API URL for foot navigation
-            val requestUrl = "https://router.project-osrm.org/route/v1/foot/$startLon,$startLat;$endLon,$endLat?overview=full&steps=true&geometries=geojson&alternatives=false"
+            val requestUrl =
+                "https://router.project-osrm.org/route/v1/foot/$startLon,$startLat;$endLon,$endLat?overview=full&steps=true&geometries=geojson&alternatives=false"
             Log.d("DirectionMapHelpers", "Requesting OSRM route")
 
             val url = URL(requestUrl)
@@ -347,7 +387,7 @@ object DirectionMapHelpers {
                 var read: Int
 
                 while (reader.read(buffer).also { read = it } != -1) {
-                    response.append(buffer, 0, read)
+                    response.appendRange(buffer, 0, read)
                 }
                 reader.close()
 
@@ -387,8 +427,11 @@ object DirectionMapHelpers {
 
                 // Ensure we always include the last point
                 if (routePoints.isEmpty() ||
-                    routePoints.last().latitude != coordinates.getJSONArray(coordinates.length() - 1).getDouble(1) ||
-                    routePoints.last().longitude != coordinates.getJSONArray(coordinates.length() - 1).getDouble(0)) {
+                    routePoints.last().latitude != coordinates.getJSONArray(coordinates.length() - 1)
+                        .getDouble(1) ||
+                    routePoints.last().longitude != coordinates.getJSONArray(coordinates.length() - 1)
+                        .getDouble(0)
+                ) {
                     val lastCoord = coordinates.getJSONArray(coordinates.length() - 1)
                     routePoints.add(GeoPoint(lastCoord.getDouble(1), lastCoord.getDouble(0)))
                 }
@@ -422,6 +465,7 @@ object DirectionMapHelpers {
                                         else -> "Biegen Sie ab"
                                     }
                                 }
+
                                 "continue" -> "Weiter geradeaus"
                                 "arrive" -> "Sie haben Ihr Ziel erreicht"
                                 else -> "Folgen Sie der Strecke"
@@ -442,7 +486,6 @@ object DirectionMapHelpers {
 
     /**
      * Enhanced street route algorithm that creates more realistic paths
-     * Replace this method in your DirectionMapHelpers class
      */
     fun createSimplifiedStreetRoute(
         startPoint: GeoPoint,
@@ -483,10 +526,12 @@ object DirectionMapHelpers {
                 points.add(midPoint1)
 
                 // Then move horizontally
-                points.add(GeoPoint(
-                    startPoint.latitude + (latDelta * 0.8),
-                    endPoint.longitude
-                ))
+                points.add(
+                    GeoPoint(
+                        startPoint.latitude + (latDelta * 0.8),
+                        endPoint.longitude
+                    )
+                )
             } else {
                 // Horizontal first, then vertical
 
@@ -498,10 +543,12 @@ object DirectionMapHelpers {
                 points.add(midPoint1)
 
                 // Then move vertically
-                points.add(GeoPoint(
-                    endPoint.latitude,
-                    startPoint.longitude + (lonDelta * 0.8)
-                ))
+                points.add(
+                    GeoPoint(
+                        endPoint.latitude,
+                        startPoint.longitude + (lonDelta * 0.8)
+                    )
+                )
             }
         } else {
             // For shorter routes, use a simpler zigzag approach
@@ -529,11 +576,11 @@ object DirectionMapHelpers {
 
         return points
     }
+
     /**
-     * This method forces the map to use L-shaped routes by adding it to the DirectionMapComponent class.
-     * Insert this method call at the beginning of your map initialization.
+     * Create an L-shaped route and display it on the map
      */
-    private fun forceStreetBasedRoute(
+    fun forceStreetBasedRoute(
         mapView: MapView,
         startPoint: GeoPoint,
         endPoint: GeoPoint,
@@ -541,7 +588,7 @@ object DirectionMapHelpers {
         userLocationColor: Int,
         destinationColor: Int,
         context: Context
-    ) {
+    ): List<GeoPoint> {
         // Create an L-shaped route directly
         val points = mutableListOf<GeoPoint>()
         points.add(startPoint)
@@ -566,8 +613,7 @@ object DirectionMapHelpers {
         mapView.overlays.addAll(existingOverlays)
 
         // Add the L-shaped route
-        val helpers = DirectionMapHelpers
-        helpers.addDirectionRoute(
+        addDirectionRoute(
             mapView,
             startPoint,
             endPoint,
@@ -580,6 +626,8 @@ object DirectionMapHelpers {
 
         // Force map refresh
         mapView.invalidate()
+
+        return points
     }
 
     /**
@@ -628,24 +676,15 @@ object DirectionMapHelpers {
             mapView.overlays.add(directLine)
         }
 
-        // Add user location marker
-        val userMarker = Marker(mapView).apply {
-            position = startPoint
-            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-            icon = createGlowingLocationMarker(context, userLocationColor)
-            title = null
-            setInfoWindow(null)
-        }
-        mapView.overlays.add(userMarker)
+        // Add user location marker using the dedicated method
+        updateUserMarkerPosition(mapView, startPoint, userLocationColor, context)
 
         // Limit number of direction arrows for performance
         if (routePoints.size > 3) {
             addOptimizedDirectionArrows(mapView, routePoints, routeColor, context)
         }
-
-        // Refresh the map
-        mapView.invalidate()
     }
+
     /**
      * Create a small arrow icon for direction indicators along the route.
      */
@@ -768,6 +807,7 @@ object DirectionMapHelpers {
     /**
      * Format distance in a human-readable way.
      */
+    @SuppressLint("DefaultLocale")
     fun formatDistance(distanceMeters: Double): String {
         return when {
             distanceMeters < 1000 -> "Entfernung: ${distanceMeters.toInt()} m"
@@ -776,7 +816,7 @@ object DirectionMapHelpers {
     }
 
     /**
-     * Get a human-readable direction based on coordinates.
+     * Get a simple human-readable direction based on coordinates.
      */
     fun getDirectionText(fromLocation: LocationData, toLocation: LocationData): String {
         // Calculate bearing between points
@@ -797,6 +837,162 @@ object DirectionMapHelpers {
             bearing > 292.5 && bearing <= 337.5 -> "Gehen Sie nach Nordwesten"
             else -> "Folgen Sie der Strecke"
         }
+    }
+
+    /**
+     * Get formal traffic directions based on route and current position.
+     */
+    @SuppressLint("DefaultLocale")
+    fun getFormattedDirections(
+        currentLocation: LocationData,
+        routePoints: List<GeoPoint>,
+        destinationLocation: LocationData
+    ): String {
+        // Find closest point on route to current location
+        var closestPointIndex = 0
+        var minDistance = Double.MAX_VALUE
+
+        routePoints.forEachIndexed { index, point ->
+            val dist = calculateDistance(
+                currentLocation.latitude, currentLocation.longitude,
+                point.latitude, point.longitude
+            )
+            if (dist < minDistance) {
+                minDistance = dist
+                closestPointIndex = index
+            }
+        }
+
+        // Check if we're off route
+        if (minDistance > 50) {
+            return "Kehren Sie zur Route zurück"
+        }
+
+        // If we're at the last segment, we're approaching destination
+        if (closestPointIndex >= routePoints.size - 2) {
+            val distToDestination = calculateDistance(
+                currentLocation.latitude, currentLocation.longitude,
+                destinationLocation.latitude, destinationLocation.longitude
+            )
+
+            return if (distToDestination < 50) {
+                "Sie haben Ihr Ziel erreicht"
+            } else {
+                "Sie nähern sich Ihrem Ziel"
+            }
+        }
+
+        // Look ahead to next significant turn
+        var nextTurnIndex = -1
+        var maxAngleChange = 25.0 // Minimum angle to consider a turn
+
+        // Look ahead up to 5 points to find significant turns
+        val lookAheadLimit = min(closestPointIndex + 5, routePoints.size - 1)
+
+        for (i in closestPointIndex + 1 until lookAheadLimit) {
+            if (i > 0 && i < routePoints.size - 1) {
+                val prevBearing = calculateBearing(
+                    routePoints[i - 1].latitude, routePoints[i - 1].longitude,
+                    routePoints[i].latitude, routePoints[i].longitude
+                )
+
+                val nextBearing = calculateBearing(
+                    routePoints[i].latitude, routePoints[i].longitude,
+                    routePoints[i + 1].latitude, routePoints[i + 1].longitude
+                )
+
+                // Calculate absolute angle difference
+                var angleDiff = abs(nextBearing - prevBearing)
+                if (angleDiff > 180) {
+                    angleDiff = 360 - angleDiff
+                }
+
+                if (angleDiff > maxAngleChange) {
+                    maxAngleChange = angleDiff
+                    nextTurnIndex = i
+                    break
+                }
+            }
+        }
+
+        // If we found a significant turn
+        if (nextTurnIndex != -1) {
+            val prevBearing = calculateBearing(
+                routePoints[nextTurnIndex - 1].latitude, routePoints[nextTurnIndex - 1].longitude,
+                routePoints[nextTurnIndex].latitude, routePoints[nextTurnIndex].longitude
+            )
+
+            val nextBearing = calculateBearing(
+                routePoints[nextTurnIndex].latitude, routePoints[nextTurnIndex].longitude,
+                routePoints[nextTurnIndex + 1].latitude, routePoints[nextTurnIndex + 1].longitude
+            )
+
+            // Distance to the turn
+            val distanceToTurn = calculateDistanceBetweenPoints(
+                routePoints.subList(closestPointIndex, nextTurnIndex + 1)
+            )
+
+            val formattedDistance = if (distanceToTurn < 30) {
+                "Jetzt"
+            } else if (distanceToTurn < 100) {
+                "In Kürze"
+            } else if (distanceToTurn < 1000) {
+                "In ${(distanceToTurn / 10).toInt() * 10} Metern"
+            } else {
+                "In ${String.format("%.1f", distanceToTurn / 1000)} km"
+            }
+
+            // Calculate turn direction
+            var angleDiff = nextBearing - prevBearing
+            if (angleDiff < -180) angleDiff += 360
+            if (angleDiff > 180) angleDiff -= 360
+
+            val turnDirection = when {
+                angleDiff > 150 -> "Bitte wenden Sie"
+                angleDiff > 80 -> "Biegen Sie scharf rechts ab"
+                angleDiff > 30 -> "Biegen Sie rechts ab"
+                angleDiff > 10 -> "Halten Sie sich rechts"
+                angleDiff > -10 -> "Fahren Sie geradeaus"
+                angleDiff > -30 -> "Halten Sie sich links"
+                angleDiff > -80 -> "Biegen Sie links ab"
+                angleDiff > -150 -> "Biegen Sie scharf links ab"
+                else -> "Bitte wenden Sie"
+            }
+
+            return "$formattedDistance: $turnDirection"
+        }
+
+        // If no significant turn was found, use the direction to the destination
+        val bearing = calculateBearing(
+            currentLocation.latitude, currentLocation.longitude,
+            destinationLocation.latitude, destinationLocation.longitude
+        )
+
+        return when {
+            bearing > 337.5 || bearing <= 22.5 -> "Fahren Sie weiter Richtung Norden"
+            bearing > 22.5 && bearing <= 67.5 -> "Fahren Sie weiter Richtung Nordosten"
+            bearing > 67.5 && bearing <= 112.5 -> "Fahren Sie weiter Richtung Osten"
+            bearing > 112.5 && bearing <= 157.5 -> "Fahren Sie weiter Richtung Südosten"
+            bearing > 157.5 && bearing <= 202.5 -> "Fahren Sie weiter Richtung Süden"
+            bearing > 202.5 && bearing <= 247.5 -> "Fahren Sie weiter Richtung Südwesten"
+            bearing > 247.5 && bearing <= 292.5 -> "Fahren Sie weiter Richtung Westen"
+            bearing > 292.5 && bearing <= 337.5 -> "Fahren Sie weiter Richtung Nordwesten"
+            else -> "Folgen Sie der Route"
+        }
+    }
+
+    /**
+     * Calculate the total distance between a series of points
+     */
+    private fun calculateDistanceBetweenPoints(points: List<GeoPoint>): Double {
+        var totalDistance = 0.0
+        for (i in 0 until points.size - 1) {
+            totalDistance += calculateDistance(
+                points[i].latitude, points[i].longitude,
+                points[i + 1].latitude, points[i + 1].longitude
+            )
+        }
+        return totalDistance
     }
 
     /**

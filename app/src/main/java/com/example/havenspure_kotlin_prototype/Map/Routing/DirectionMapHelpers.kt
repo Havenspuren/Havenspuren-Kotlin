@@ -10,6 +10,7 @@ import android.graphics.Path
 import android.graphics.drawable.BitmapDrawable
 import android.util.Log
 import com.example.havenspure_kotlin_prototype.Data.LocationData
+import com.example.havenspure_kotlin_prototype.Map.routing.OfflineRoutingService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
@@ -1016,5 +1017,106 @@ object DirectionMapHelpers {
         }
 
         return bearing
+    }
+
+
+    /**
+     * Calculate a street-based route using GraphHopper
+     */
+    fun calculateGraphHopperRoute(
+        mapView: MapView,
+        startPoint: GeoPoint,
+        destinationPoint: GeoPoint,
+        routeColor: Int,
+        markerColor: Int,
+        destinationMarkerColor: Int,
+        context: Context
+    ): List<GeoPoint> {
+        try {
+            // Get the routing service from your application
+            val routingService = OfflineRoutingService.getInstance(context)
+
+            // Calculate the route using GraphHopper
+            val routePoints = routingService.calculateRoute(
+                startPoint.latitude,
+                startPoint.longitude,
+                destinationPoint.latitude,
+                destinationPoint.longitude,
+                "car"  // Or "foot" or "bike" depending on your needs
+            )
+
+            // If we got a valid route, display it
+            if (routePoints.isNotEmpty()) {
+                // Draw the route on the map - using your existing method or similar code
+                drawRouteOnMap(mapView, routePoints, routeColor)
+
+                // Add markers - using your existing methods
+                updateUserMarkerPosition(mapView, startPoint, markerColor, context)
+              // For the destination marker, add it directly since there's no dedicated method:
+                val destinationMarker = Marker(mapView).apply {
+                    position = destinationPoint
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                    icon = createCustomPin(context, destinationMarkerColor)
+                    title = "Ziel"
+                }
+                mapView.overlays.add(destinationMarker)
+                return routePoints
+            } else {
+                // If GraphHopper fails, fall back to your original method
+                Log.d("DirectionMapHelpers", "GraphHopper route failed, falling back to original method")
+                return forceStreetBasedRoute(
+                    mapView, startPoint, destinationPoint,
+                    routeColor, markerColor, destinationMarkerColor, context
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("DirectionMapHelpers", "Error in GraphHopper routing: ${e.message}", e)
+
+            // On error, fall back to your original method
+            return forceStreetBasedRoute(
+                mapView, startPoint, destinationPoint,
+                routeColor, markerColor, destinationMarkerColor, context
+            )
+        }
+    }
+
+    /**
+     * Get formatted directions using GraphHopper
+     */
+    fun getGraphHopperDirections(
+        userLocation: LocationData,
+        routePoints: List<GeoPoint>,
+        destinationLocation: LocationData,
+        context: Context
+    ): String {
+        try {
+            // Get the routing service
+            val routingService = OfflineRoutingService.getInstance(context)
+
+            // Get instructions
+            val instructions = routingService.getInstructions(
+                userLocation.latitude,
+                userLocation.longitude,
+                destinationLocation.latitude,
+                destinationLocation.longitude,
+                "car"
+            )
+
+            // Return the next instruction or a default message
+            return instructions.firstOrNull() ?: "Starten Sie Ihre Route"
+        } catch (e: Exception) {
+            Log.e("DirectionMapHelpers", "Error getting GraphHopper directions: ${e.message}", e)
+
+            // Fall back to your original method or return a default
+            return getFormattedDirections(userLocation, routePoints, destinationLocation)
+        }
+    }
+
+    /**
+     * Helper method to draw route on map
+     */
+    private fun drawRouteOnMap(mapView: MapView, routePoints: List<GeoPoint>, routeColor: Int) {
+        // Implementation to draw route - reuse your existing code or implement here
+        // This would create a Polyline and add it to the map overlays
     }
 }

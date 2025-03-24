@@ -47,7 +47,12 @@ android {
     }
     packaging {
         resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            //excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes.add("/META-INF/{AL2.0,LGPL2.1}")
+            excludes.add("META-INF/LICENSE.md")
+            excludes.add("META-INF/NOTICE.md")
+            excludes.add("META-INF/LICENSE")
+            excludes.add("META-INF/NOTICE")
         }
     }
 }
@@ -92,6 +97,12 @@ dependencies {
 
     // For JSON serialization
     implementation ("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.1")
+
+    // Add GraphHopper Core
+    implementation ("com.graphhopper:graphhopper-core:1.0")
+    // If you need specific map matching features
+    //implementation ("com.graphhopper:graphhopper-map-matching:1.0")
+
 
     // Testing
     testImplementation(libs.junit)

@@ -84,7 +84,10 @@ fun TourDetailScreen(
             )
 
             ActionCard(
-                title = "Richtungen Zeigen",
+                //title = "Richtungen Zeigen",
+                //icon = Icons.Default.LocationOn,
+                //onClick = onGPSClick
+                title = "Offline Navigation",
                 icon = Icons.Default.LocationOn,
                 onClick = onGPSClick
             )

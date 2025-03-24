@@ -18,4 +18,5 @@ sealed class Screen(val route: String) {
     object TourLesen : Screen("tour_lesen")
     object TourHoren : Screen("tour_horen")
     object RichtungenZeigen : Screen("richtungen_zeigen")
+    object OfflineRichtungenZeigen : Screen("offline_richtungen_zeigen") // New offline directions screen
 }

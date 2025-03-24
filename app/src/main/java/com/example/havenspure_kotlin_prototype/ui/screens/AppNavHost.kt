@@ -22,6 +22,7 @@ import com.example.havenspure_kotlin_prototype.ViewModels.LocationViewModel
 import com.example.havenspure_kotlin_prototype.models.Tour
 import com.example.havenspure_kotlin_prototype.ui.screens.LocationPermissionScreen
 import com.example.havenspure_kotlin_prototype.ui.screens.MainScreen
+import com.example.havenspure_kotlin_prototype.ui.screens.OfflineRichtungenZeigenScreen
 import com.example.havenspure_kotlin_prototype.ui.screens.RichtungenZeigenScreen
 import com.example.havenspure_kotlin_prototype.ui.screens.SplashScreen
 import com.example.havenspure_kotlin_prototype.ui.screens.TourDetailScreen
@@ -183,7 +184,7 @@ fun AppNavHost(navController: NavHostController, context: Context) {
                     navController.navigate(Screen.TourHoren.route)
                  },
                 onGPSClick = { navController.currentBackStackEntry?.savedStateHandle?.set("tour", tour)
-                    navController.navigate(Screen.RichtungenZeigen.route) },
+                    navController.navigate(Screen.OfflineRichtungenZeigen.route) },
                 locationviewmodel = locationViewModel
             )
         }
@@ -192,6 +193,17 @@ fun AppNavHost(navController: NavHostController, context: Context) {
                 ?: Tour(id = "", title = "Unknown Tour", progress = 0)
 
             RichtungenZeigenScreen(
+                tour = tour,
+                onBackClick = { navController.popBackStack() },
+                locationViewModel = locationViewModel
+            )
+        }
+        // Offline Richtungen Zeigen (Directions) screen
+        composable(route = Screen.OfflineRichtungenZeigen.route) {
+            val tour = navController.previousBackStackEntry?.savedStateHandle?.get<Tour>("tour")
+                ?: Tour(id = "", title = "Unknown Tour", progress = 0)
+
+            OfflineRichtungenZeigenScreen(
                 tour = tour,
                 onBackClick = { navController.popBackStack() },
                 locationViewModel = locationViewModel

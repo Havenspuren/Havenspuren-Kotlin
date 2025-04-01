@@ -1,5 +1,5 @@
-package com.example.havenspure_kotlin_prototype.Map.routing
-
+package com.example.havenspure_kotlin_prototype.Map.offline.OffRouting
+/*
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -9,7 +9,8 @@ import android.graphics.Path
 import android.graphics.drawable.BitmapDrawable
 import android.util.Log
 import com.example.havenspure_kotlin_prototype.Data.LocationData
-import com.example.havenspure_kotlin_prototype.Map.Routing.DirectionMapHelpers
+import com.example.havenspure_kotlin_prototype.Map.Routing.MarkerCreationHelpers
+import com.example.havenspure_kotlin_prototype.Map.Routing.RoutingHelpers
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
@@ -329,7 +330,7 @@ object OfflineDirectionMapHelpers {
             this.position = position
             title = "Ziel"
             // Use the original helper's method if available, or create a simple marker
-            icon = DirectionMapHelpers.createCustomPin(context, color)
+            icon = MarkerCreationHelpers.createCustomPin(context, color)
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
             id = "gh_destination"
         }
@@ -356,7 +357,7 @@ object OfflineDirectionMapHelpers {
 
         for (i in routePoints.indices) {
             val point = routePoints[i]
-            val distance = DirectionMapHelpers.calculateDistance(
+            val distance = RoutingHelpers.calculateDistance(
                 userLocation.latitude, userLocation.longitude,
                 point.latitude, point.longitude
             )
@@ -391,3 +392,5 @@ object OfflineDirectionMapHelpers {
         }
     }
 }
+
+ */

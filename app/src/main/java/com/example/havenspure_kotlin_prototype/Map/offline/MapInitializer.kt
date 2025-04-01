@@ -3,7 +3,7 @@ package com.example.havenspure_kotlin_prototype.Map.offline
 import android.content.Context
 import android.preference.PreferenceManager
 import android.util.Log
-import com.example.havenspure_kotlin_prototype.Map.routing.OfflineRoutingService
+import com.example.havenspure_kotlin_prototype.Map.offline.OffRouting.OfflineRoutingService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.osmdroid.config.Configuration

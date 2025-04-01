@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.havenspure_kotlin_prototype.Map.DirectionMapComponent
 import com.example.havenspure_kotlin_prototype.Map.StableRouteMapComponent
 import com.example.havenspure_kotlin_prototype.ViewModels.LocationViewModel
 import com.example.havenspure_kotlin_prototype.models.Tour
@@ -104,6 +105,8 @@ fun TourDetailScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     tour.location?.let { StableRouteMapComponent(userLocation = location, destinationLocation = it) }
+
+
                 }
             }
         }

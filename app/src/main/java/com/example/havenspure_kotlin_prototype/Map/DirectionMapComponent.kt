@@ -21,7 +21,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.example.havenspure_kotlin_prototype.Data.LocationData
-import com.example.havenspure_kotlin_prototype.Map.Routing.DirectionMapHelpers
+import com.example.havenspure_kotlin_prototype.Graph.RoutingGraph
+import com.example.havenspure_kotlin_prototype.Map.Routing.MarkerCreationHelpers
+import com.example.havenspure_kotlin_prototype.Map.Routing.RoutingHelpers
 import kotlinx.coroutines.*
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapListener
@@ -49,11 +51,15 @@ fun DirectionMapComponent(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val helpers = DirectionMapHelpers
+    val routingManager = RoutingGraph
+    val routingHelpers = RoutingHelpers
+    val markerHelpers = MarkerCreationHelpers
+
+
 
     // Initialize cache directory
     LaunchedEffect(Unit) {
-        helpers.initializeCacheDir(context)
+        routingManager.initializeCacheDir(context)
     }
 
     // Minimal configuration for performance
@@ -102,14 +108,14 @@ fun DirectionMapComponent(
 
     // Calculate initial distance
     val initialDistance = if (userLocation != null) {
-        helpers.calculateDistance(
+        routingHelpers.calculateDistance(
             userLocation.latitude, userLocation.longitude,
             destinationLocation.latitude, destinationLocation.longitude
         )
     } else 0.0
 
     val formattedDistance = if (initialDistance > 0) {
-        helpers.formatDistance(initialDistance)
+        routingHelpers.formatDistance(initialDistance)
     } else "Entfernung wird berechnet..."
 
     // Set initial values
@@ -177,7 +183,7 @@ fun DirectionMapComponent(
                 })
 
                 // Force L-shaped route immediately
-                val initialPoints = helpers.forceStreetBasedRoute(
+                val initialPoints = routingManager.forceStreetBasedRoute(
                     mapView,
                     startPoint,
                     destinationPoint,
@@ -191,14 +197,14 @@ fun DirectionMapComponent(
                 routePoints.value = initialPoints
 
                 // Calculate distance and direction
-                val quickDistance = helpers.calculateDistance(
+                val quickDistance = routingHelpers.calculateDistance(
                     startPoint.latitude, startPoint.longitude,
                     destinationPoint.latitude, destinationPoint.longitude
                 )
-                distanceRemaining.value = helpers.formatDistance(quickDistance)
+                distanceRemaining.value = routingHelpers.formatDistance(quickDistance)
 
                 // Use enhanced directions even for initial route
-                val quickDirection = helpers.getFormattedDirections(
+                val quickDirection = routingHelpers.getFormattedDirections(
                     LocationData(startPoint.latitude, startPoint.longitude),
                     initialPoints,
                     destinationLocation
@@ -210,7 +216,7 @@ fun DirectionMapComponent(
 
             // In parallel, fetch better route
             try {
-                val routeResult = helpers.getRoute(
+                val routeResult = routingManager.getRoute(
                     startPoint.latitude, startPoint.longitude,
                     destinationPoint.latitude, destinationPoint.longitude,
                     context
@@ -222,10 +228,10 @@ fun DirectionMapComponent(
                     // Update with better route if successful
                     withContext(Dispatchers.Main) {
                         routePoints.value = routeResult.first
-                        distanceRemaining.value = helpers.formatDistance(routeResult.second)
+                        distanceRemaining.value = routingHelpers.formatDistance(routeResult.second)
 
                         // Use the enhanced directions
-                        currentDirection.value = helpers.getFormattedDirections(
+                        currentDirection.value = routingHelpers.getFormattedDirections(
                             LocationData(startPoint.latitude, startPoint.longitude),
                             routeResult.first,
                             destinationLocation
@@ -236,7 +242,7 @@ fun DirectionMapComponent(
                         mapView.overlays.clear()
                         mapView.overlays.addAll(existingOverlays)
 
-                        helpers.addDirectionRoute(
+                        routingManager.addDirectionRoute(
                             mapView,
                             startPoint,
                             destinationPoint,
@@ -290,7 +296,7 @@ fun DirectionMapComponent(
                     val shouldRefreshRoute = if (routePoints.value.isNotEmpty()) {
                         // Calculate distance to closest point on route
                         val closestPointDistance = routePoints.value.minOf { routePoint ->
-                            helpers.calculateDistance(
+                            routingHelpers.calculateDistance(
                                 newUserPoint.latitude, newUserPoint.longitude,
                                 routePoint.latitude, routePoint.longitude
                             )
@@ -317,7 +323,7 @@ fun DirectionMapComponent(
                         withContext(Dispatchers.Main) {
                             try {
                                 // Force L-shaped route with updated position
-                                val newPoints = helpers.forceStreetBasedRoute(
+                                val newPoints = routingManager.forceStreetBasedRoute(
                                     mapView,
                                     newUserPoint,
                                     destinationPoint,
@@ -331,14 +337,14 @@ fun DirectionMapComponent(
                                 routePoints.value = newPoints
 
                                 // Update distance and direction
-                                val newDistance = helpers.calculateDistance(
+                                val newDistance = routingHelpers.calculateDistance(
                                     newUserPoint.latitude, newUserPoint.longitude,
                                     destinationPoint.latitude, destinationPoint.longitude
                                 )
-                                distanceRemaining.value = helpers.formatDistance(newDistance)
+                                distanceRemaining.value = routingHelpers.formatDistance(newDistance)
 
                                 // Use enhanced directions
-                                val newDirection = helpers.getFormattedDirections(
+                                val newDirection = routingHelpers.getFormattedDirections(
                                     LocationData(newUserPoint.latitude, newUserPoint.longitude),
                                     newPoints,
                                     destinationLocation
@@ -348,7 +354,7 @@ fun DirectionMapComponent(
                                 // Try to get a better route in the background
                                 launch {
                                     try {
-                                        val betterRoute = helpers.getRoute(
+                                        val betterRoute = routingManager.getRoute(
                                             newUserPoint.latitude, newUserPoint.longitude,
                                             destinationPoint.latitude, destinationPoint.longitude,
                                             context
@@ -357,10 +363,10 @@ fun DirectionMapComponent(
                                         // Only update if the fetched route has more than 3 points
                                         if (betterRoute.first.size > 3) {
                                             routePoints.value = betterRoute.first
-                                            distanceRemaining.value = helpers.formatDistance(betterRoute.second)
+                                            distanceRemaining.value = routingHelpers.formatDistance(betterRoute.second)
 
                                             // Use enhanced directions
-                                            currentDirection.value = helpers.getFormattedDirections(
+                                            currentDirection.value = routingHelpers.getFormattedDirections(
                                                 LocationData(newUserPoint.latitude, newUserPoint.longitude),
                                                 betterRoute.first,
                                                 destinationLocation
@@ -371,7 +377,7 @@ fun DirectionMapComponent(
                                             mapView.overlays.clear()
                                             mapView.overlays.addAll(existingOverlays)
 
-                                            helpers.addDirectionRoute(
+                                            routingManager.addDirectionRoute(
                                                 mapView,
                                                 newUserPoint,
                                                 destinationPoint,
@@ -407,7 +413,7 @@ fun DirectionMapComponent(
                         withContext(Dispatchers.Main) {
                             try {
                                 // Update just the user marker position
-                                helpers.updateUserMarkerPosition(
+                                markerHelpers.updateUserMarkerPosition(
                                     mapView,
                                     newUserPoint,
                                     userLocationColor,
@@ -420,7 +426,7 @@ fun DirectionMapComponent(
                                 var minDistance = Double.MAX_VALUE
 
                                 routePoints.value.forEachIndexed { index, point ->
-                                    val dist = helpers.calculateDistance(
+                                    val dist = routingHelpers.calculateDistance(
                                         newUserPoint.latitude, newUserPoint.longitude,
                                         point.latitude, point.longitude
                                     )
@@ -433,16 +439,16 @@ fun DirectionMapComponent(
                                 // Calculate remaining distance along route
                                 var remainingDistance = 0.0
                                 for (i in closestPointIndex until routePoints.value.size - 1) {
-                                    remainingDistance += helpers.calculateDistance(
+                                    remainingDistance += routingHelpers.calculateDistance(
                                         routePoints.value[i].latitude, routePoints.value[i].longitude,
                                         routePoints.value[i + 1].latitude, routePoints.value[i + 1].longitude
                                     )
                                 }
 
-                                distanceRemaining.value = helpers.formatDistance(remainingDistance)
+                                distanceRemaining.value = routingHelpers.formatDistance(remainingDistance)
 
                                 // Update direction guidance using enhanced directions
-                                val updatedDirection = helpers.getFormattedDirections(
+                                val updatedDirection = routingHelpers.getFormattedDirections(
                                     LocationData(newUserPoint.latitude, newUserPoint.longitude),
                                     routePoints.value,
                                     destinationLocation
@@ -604,7 +610,7 @@ fun DirectionMapComponent(
                         mapView.controller.animateTo(userGeoPoint)
 
                         // Then ensure the user marker is updated
-                        helpers.updateUserMarkerPosition(
+                        markerHelpers.updateUserMarkerPosition(
                             mapView,
                             userGeoPoint,
                             userLocationColor,
@@ -617,7 +623,7 @@ fun DirectionMapComponent(
                         if (!mapUpdateInProgress.value && routePoints.value.isNotEmpty()) {
                             // Calculate if we're off-route
                             val closestPointDistance = routePoints.value.minOf { routePoint ->
-                                helpers.calculateDistance(
+                                routingHelpers.calculateDistance(
                                     userGeoPoint.latitude, userGeoPoint.longitude,
                                     routePoint.latitude, routePoint.longitude
                                 )

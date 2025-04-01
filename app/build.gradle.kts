@@ -53,6 +53,7 @@ android {
             excludes.add("META-INF/NOTICE.md")
             excludes.add("META-INF/LICENSE")
             excludes.add("META-INF/NOTICE")
+            excludes.add("META-INF/LICENSE-notice.md")  // Add this line
         }
     }
 }
@@ -90,6 +91,9 @@ dependencies {
     // OSMBonusPack - required for routing features
     implementation("com.github.MKergall:osmbonuspack:6.9.0")
 
+    implementation("org.osmdroid:osmdroid-mapsforge:6.1.16")
+
+
     // Needed by OSMBonusPack
     implementation("org.apache.commons:commons-lang3:3.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
@@ -99,9 +103,27 @@ dependencies {
     implementation ("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.1")
 
     // Add GraphHopper Core
-    implementation ("com.graphhopper:graphhopper-core:1.0")
+    //implementation ("com.graphhopper:graphhopper-core:1.0")
+    // GraphHopper dependencies
+    //implementation("com.graphhopper:graphhopper-core:6.2")
+    //implementation("com.graphhopper:graphhopper-api:6.2")
+    //implementation("com.graphhopper:graphhopper-web-api:6.2")
+    implementation("com.graphhopper:graphhopper-core:2.4")
+    implementation("com.graphhopper:graphhopper-reader-osm:2.4")
+    implementation(libs.androidx.preference.ktx)
+    implementation(libs.screenshot.validation.junit.engine)
     // If you need specific map matching features
     //implementation ("com.graphhopper:graphhopper-map-matching:1.0")
+    // Retrofit for network requests
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+
+// Gson for JSON parsing
+    implementation("com.google.code.gson:gson:2.10.1")
+
+
 
 
     // Testing

@@ -1,10 +1,9 @@
-package com.example.havenspure_kotlin_prototype.Map.routing
+package com.example.havenspure_kotlin_prototype.Map.offline.OffRouting
 
 import android.content.Context
 import android.util.Log
 import com.graphhopper.GraphHopper
 import com.graphhopper.config.Profile
-import com.graphhopper.routing.util.EncodingManager
 import com.graphhopper.util.Parameters
 import com.graphhopper.util.PointList
 import org.osmdroid.util.GeoPoint

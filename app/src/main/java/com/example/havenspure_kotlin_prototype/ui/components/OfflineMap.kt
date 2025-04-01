@@ -1,5 +1,5 @@
 package com.example.havenspure_kotlin_prototype.ui.screens
-
+/*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -15,7 +15,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.havenspure_kotlin_prototype.Data.LocationData
 import com.example.havenspure_kotlin_prototype.Map.offline.MapInitializer
-import com.example.havenspure_kotlin_prototype.Map.offline.SimplifiedDirectionMapComponent
 import com.example.havenspure_kotlin_prototype.ViewModels.LocationViewModel
 import com.example.havenspure_kotlin_prototype.models.Tour
 import com.example.havenspure_kotlin_prototype.ui.theme.GradientEnd
@@ -92,3 +91,5 @@ fun OfflineRichtungenZeigenScreen(
         }
     }
 }
+
+ */

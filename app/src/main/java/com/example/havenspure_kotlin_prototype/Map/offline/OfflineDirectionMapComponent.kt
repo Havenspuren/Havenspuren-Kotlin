@@ -1,6 +1,5 @@
 package com.example.havenspure_kotlin_prototype.Map.offline
-
-import android.content.Context
+/*
 import android.os.Handler
 import android.os.HandlerThread
 import android.preference.PreferenceManager
@@ -25,8 +24,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.example.havenspure_kotlin_prototype.Data.LocationData
 import com.example.havenspure_kotlin_prototype.Map.Routing.DirectionMapHelpers
-import com.example.havenspure_kotlin_prototype.Map.routing.OfflineDirectionMapHelpers
-import com.example.havenspure_kotlin_prototype.Map.routing.OfflineRoutingService
+import com.example.havenspure_kotlin_prototype.Map.offline.OffRouting.OfflineDirectionMapHelpers
+import com.example.havenspure_kotlin_prototype.Map.offline.OffRouting.OfflineRoutingService
 import kotlinx.coroutines.*
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapListener
@@ -34,7 +33,6 @@ import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
-import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
 import java.io.File
 
@@ -626,3 +624,7 @@ fun SimplifiedDirectionMapComponent(
         }
     }
 }
+
+
+
+ */

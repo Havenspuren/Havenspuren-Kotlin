@@ -381,6 +381,7 @@ fun MapComponent(locationData: LocationData?) {
  * Updates map markers without causing a full redraw each time.
  * Only used when we have user location data.
  */
+@SuppressLint("DefaultLocale")
 private fun updateMapMarkers(
     mapView: MapView,
     position: GeoPoint,

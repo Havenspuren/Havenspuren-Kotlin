@@ -73,6 +73,14 @@ class MapViewModel(private val context: Context) : ViewModel() {
     private val _savedUserLocation = MutableStateFlow<LocationDataOSRM?>(null)
     private val _savedDestinationLocation = MutableStateFlow<LocationDataOSRM?>(null)
 
+    private val _isMinimallyReady = MutableStateFlow(false)
+    val isMinimallyReady: StateFlow<Boolean> = _isMinimallyReady.asStateFlow()
+
+    private var lastNavigationUpdateTime = 0L
+
+    // Route cache with key as "startLat,startLng;destLat,destLng"
+    private val routeCache = mutableMapOf<String, RouteData>()
+
     init {
         // Initialize map assistant
         mapAssistant.initialize()
@@ -109,6 +117,28 @@ class MapViewModel(private val context: Context) : ViewModel() {
                     _isCalculatingRoute.value = false
                 }
             }
+        }
+    }
+
+    // Generate cache key for routes
+    private fun generateRouteCacheKey(start: LocationDataOSRM, dest: LocationDataOSRM): String {
+        return "${start.latitude},${start.longitude};${dest.latitude},${dest.longitude}"
+    }
+
+    // Check cache for existing route
+    private fun getCachedRoute(start: LocationDataOSRM, dest: LocationDataOSRM): RouteData? {
+        val key = generateRouteCacheKey(start, dest)
+        return routeCache[key]
+    }
+
+    // Store route in cache
+    private fun cacheRoute(start: LocationDataOSRM, dest: LocationDataOSRM, route: RouteData) {
+        val key = generateRouteCacheKey(start, dest)
+        routeCache[key] = route
+
+        // Limit cache size to prevent memory issues
+        if (routeCache.size > 10) {
+            routeCache.entries.firstOrNull()?.let { routeCache.remove(it.key) }
         }
     }
 
@@ -176,8 +206,10 @@ class MapViewModel(private val context: Context) : ViewModel() {
     /**
      * Start navigation to destination with improved error handling
      */
+    /**
+     * Start navigation to destination with improved error handling
+     */
     fun startNavigation(mapView: MapView): Boolean {
-        // Don't start another calculation if one is in progress
         // Don't start another calculation if one is in progress
         if (_isCalculatingRoute.value) {
             Log.d(TAG, "Route calculation already in progress, ignoring duplicate request")
@@ -214,10 +246,25 @@ class MapViewModel(private val context: Context) : ViewModel() {
             return false
         }
 
+        // Check if we have this route cached
+        val cachedRoute = getCachedRoute(userLoc, destLoc)
+        if (cachedRoute != null) {
+            Log.d(TAG, "Using cached route instead of making network request")
+            _currentRoute.value = cachedRoute
+            setRouteCalculated(true)
+            _isCalculatingRoute.value = false
+            return true
+        }
+
         mapAssistant.startNavigation(mapView, userLoc, destLoc) { success, error ->
             if (success) {
                 // This will be called when route is successfully calculated
                 // Instructions will be updated via the currentRoute collector
+
+                // Cache successful route
+                _currentRoute.value?.let { route ->
+                    cacheRoute(userLoc, destLoc, route)
+                }
             } else {
                 Log.e(TAG, "Failed to start navigation: $error")
                 // Force route calculation to be considered complete even on failure
@@ -298,6 +345,13 @@ class MapViewModel(private val context: Context) : ViewModel() {
      * Update navigation with current user location
      */
     fun updateNavigation(mapView: MapView): Boolean {
+        // Implement throttling for navigation updates
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastNavigationUpdateTime < 250) { // Max 4 updates per second
+            return true // Return true to indicate "success" without actually updating
+        }
+        lastNavigationUpdateTime = currentTime
+
         val userLoc = _userLocation.value
         val destLoc = _destinationLocation.value
 
@@ -348,13 +402,20 @@ class MapViewModel(private val context: Context) : ViewModel() {
      * Update the fully ready state using simpler logic
      */
     private fun updateReadyState() {
-        // Consider fully ready when maps are loaded, route is calculated, and not loading
-        val newReadyState = _mapTilesLoaded.value && _routeCalculated.value && !_isLoading.value
+        // Two states: minimally ready (just map) and fully ready (map + route)
+        val minimallyReady = _mapTilesLoaded.value && !_isLoading.value
+        val fullyReady = minimallyReady && _routeCalculated.value
+
+        // Track state changes for partial UI updates
+        if (_isMinimallyReady.value != minimallyReady) {
+            _isMinimallyReady.value = minimallyReady
+            Log.d(TAG, "Map minimally ready: $minimallyReady")
+        }
 
         // Only update if state actually changes to avoid unnecessary recompositions
-        if (_isFullyReady.value != newReadyState) {
-            _isFullyReady.value = newReadyState
-            Log.d(TAG, "App ready state changed to: $newReadyState (tiles: ${_mapTilesLoaded.value}, route: ${_routeCalculated.value}, loading: ${_isLoading.value})")
+        if (_isFullyReady.value != fullyReady) {
+            _isFullyReady.value = fullyReady
+            Log.d(TAG, "App ready state changed to: $fullyReady (tiles: ${_mapTilesLoaded.value}, route: ${_routeCalculated.value}, loading: ${_isLoading.value})")
         }
     }
 
@@ -386,12 +447,12 @@ class MapViewModel(private val context: Context) : ViewModel() {
 
         // Add a fast initial check followed by a guaranteed timeout
         viewModelScope.launch {
-            // Quick check for already cached tiles
-            delay(500)
+            // Quick check for already cached tiles - much faster initial check
+            delay(200)
             checkTileLoadStatus(mapView)
 
-            // Force ready state after timeout
-            delay(1500) // 1.5 seconds is enough for most cached tiles
+            // Force ready state after shorter timeout
+            delay(600) // 600ms is enough for most cached tiles
             setMapTilesLoaded(true)
         }
     }

@@ -5,6 +5,7 @@ import android.content.Context
 import android.util.Log
 import com.example.havenspure_kotlin_prototype.OSRM.data.models.LocationDataOSRM
 import com.example.havenspure_kotlin_prototype.OSRM.data.models.RouteData
+import com.example.havenspure_kotlin_prototype.OSRM.data.models.RouteStatus
 import com.example.havenspure_kotlin_prototype.OSRM.data.remote.MapRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +15,7 @@ import kotlinx.coroutines.launch
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
+import kotlin.math.abs
 
 /**
  * Main coordinator class for map functionality
@@ -28,6 +30,8 @@ class MapAssistant private constructor(private val context: Context) {
     private val routeManager = RouteManager(context, markerManager, mapRepository)
     private val navigationManager = NavigationManager(context)
     private val offlineMapManager = OfflineMapManager(context)
+    private var lastBearingValue: Float = 0f
+    private var lastBearingUpdateTime = 0L
 
     // State tracking
     private val _isNavigating = MutableStateFlow(false)
@@ -139,6 +143,7 @@ class MapAssistant private constructor(private val context: Context) {
         routeManager.setColors(routeColor, userMarkerColor, destinationMarkerColor)
     }
 
+
     /**
      * Start navigation between two points
      *
@@ -185,6 +190,21 @@ class MapAssistant private constructor(private val context: Context) {
             mapView.controller.setCenter(startPoint)
             mapView.controller.setZoom(15.0)
 
+            // Signal navigation has started immediately to show minimal UI
+            _isNavigating.value = true
+            navigationManager.startOrientationTracking()
+
+            // Set initial instructions while route calculates
+            _currentRoute.value = RouteData(
+                points = listOf(startPoint, endPoint),
+                distance = -1.0,
+                duration = -1.0,
+                instructions = listOf(), // Empty instructions until route calculated
+                status = RouteStatus.SUCCESS // Use the correct enum value
+            )
+            // Send immediate partial success callback to display map while route calculates
+            callback(true, null)
+
             // Calculate route with higher priority
             CoroutineScope(Dispatchers.IO).launch {
                 try {
@@ -194,20 +214,19 @@ class MapAssistant private constructor(private val context: Context) {
 
                         if (success && route != null) {
                             _currentRoute.value = route
-                            _isNavigating.value = true
+                            // Note: We already set _isNavigating = true earlier for faster UI display
 
                             // Start orientation tracking for bearing
-                            navigationManager.startOrientationTracking()
-
-                            callback(true, null)
+                            // Note: We already started orientation tracking earlier
                         } else {
-                            callback(false, error)
+                            // Only report errors, don't change UI state on failure
+                            Log.e(TAG, "Route calculation failed: $error")
                         }
                     }
                 } catch (e: Exception) {
                     _isLoading.value = false
                     Log.e(TAG, "Error in route calculation: ${e.message}")
-                    callback(false, e.message)
+                    // Don't call callback with failure as we already showed partial UI
                 }
             }
         } catch (e: Exception) {
@@ -237,36 +256,37 @@ class MapAssistant private constructor(private val context: Context) {
         if (!_isNavigating.value) return false
 
         try {
-            // Update user marker with bearing from sensors
-            val bearing = navigationManager.currentBearing.value
             val userPoint = GeoPoint(userLocation.latitude, userLocation.longitude)
+            val currentTime = System.currentTimeMillis()
 
-            // Update the marker on the map
+            // Get bearing if available (replace hasValidBearing() with null check)
+            val currentBearing = navigationManager.currentBearing.value
+            val bearingIsValid = !currentBearing.isNaN() // Simple NaN check
+
+            // Throttle bearing updates (max every 500ms or >5° change)
+            val bearingDifference = if (bearingIsValid) abs(currentBearing - lastBearingValue) else Float.MAX_VALUE
+            val updateBearing = bearingDifference > 5.0f || (currentTime - lastBearingUpdateTime > 500)
+
+            // Always update position, conditionally update bearing
             routeManager.updateUserMarker(
                 mapView,
                 userPoint,
-                bearing
+                if (bearingIsValid && updateBearing) currentBearing else null
             )
 
-            // Only center map if explicitly requested (follow mode active)
-            if (centerMap) {
-                // Use smooth animation to center with a slight zoom
-                mapView.controller.animateTo(
-                    userPoint,
-                    mapView.zoomLevelDouble,
-                    400, // Animation duration in ms
-                    0f   // No rotation
-                )
+            // Update bearing tracking if needed
+            if (updateBearing && bearingIsValid) {
+                lastBearingValue = currentBearing
+                lastBearingUpdateTime = currentTime
             }
 
-            // Update navigation instructions regardless of centering
-            navigationManager.updateNavigation(
-                userLocation,
-                destinationLocation,
-                routeManager
-            )
+            // Rest of your existing logic...
+            if (centerMap) {
+                mapView.controller.animateTo(userPoint, mapView.zoomLevelDouble, 400, 0f)
+            }
 
-            // Check if rerouting is needed
+            navigationManager.updateNavigation(userLocation, destinationLocation, routeManager)
+
             if (routeManager.isReroutingNeeded(userLocation)) {
                 Log.d(TAG, "User is off route, rerouting...")
                 rerouteNavigation(mapView, userLocation, destinationLocation)

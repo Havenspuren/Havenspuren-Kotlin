@@ -31,7 +31,10 @@ class MarkerManager(private val context: Context) {
     private var routeOverlay: Polyline? = null
     private var userBearing: Float = 0f
     private var currentZoomLevel: Double = 17.0
+    private var lastUpdateTime = 0L
 
+    private val directionIconCache = HashMap<String, BitmapDrawable>() // Key: "bearing_zoom_color"
+    private var lastUserPosition = GeoPoint(0.0, 0.0)
     /**
      * Custom marker class that maintains its own bearing regardless of map rotation
      */
@@ -40,21 +43,90 @@ class MarkerManager(private val context: Context) {
         var color: Int = Color.BLUE
         var bearing: Float = 0f
         private val mapView: MapView = mapView
+        private var lastUsedBearing: Float = -1f
+        private var lastUsedZoom: Double = -1.0
+        private var lastUsedColor: Int = 0
+        private var cachedBitmap: Bitmap? = null
+
+        private var lastBitmap: Bitmap? = null
 
         override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
-            if (shadow) return
+            if (shadow || position.latitude == 0.0) return
 
-            // Convert geo coordinates to screen coordinates
-            val point = mapView.projection.toPixels(position, null)
+            // Get or create bitmap
+            val bitmap = lastBitmap ?: run {
+                val drawable = createUserLocationIcon(color, bearing, mapView.zoomLevelDouble)
+                val bitmap = Bitmap.createBitmap(
+                    drawable.intrinsicWidth,
+                    drawable.intrinsicHeight,
+                    Bitmap.Config.ARGB_8888
+                )
+                val bitmapCanvas = Canvas(bitmap)
+                drawable.setBounds(0, 0, bitmapCanvas.width, bitmapCanvas.height)
+                drawable.draw(bitmapCanvas)
+                bitmap.also { lastBitmap = it } // Cache the bitmap
+            }
 
-            // Create and draw the marker at the correct screen position
-            val icon = createUserLocationIcon(color, bearing, mapView.zoomLevelDouble)
-            val bitmap = (icon as BitmapDrawable).bitmap
-            val width = bitmap.width
-            val height = bitmap.height
+            val screenPos = mapView.projection.toPixels(position, null)
 
-            // Draw centered on position
-            canvas.drawBitmap(bitmap, point.x - width/2f, point.y - height/2f, null)
+            // Account for map rotation
+            canvas.save()
+            canvas.rotate(-mapView.mapOrientation, screenPos.x.toFloat(), screenPos.y.toFloat())
+
+            canvas.drawBitmap(
+                bitmap,
+                screenPos.x - bitmap.width / 2f,
+                screenPos.y - bitmap.height / 2f,
+                null
+            )
+
+            canvas.restore()
+        }
+
+        // New method to handle caching
+        private fun getOrCreateBitmap(): Bitmap {
+            // Check if we need a new bitmap
+            val zoomChanged = Math.abs(lastUsedZoom - mapView.zoomLevelDouble) > 0.5
+            val bearingChanged = Math.abs(lastUsedBearing - bearing) > 5.0
+            val colorChanged = lastUsedColor != color
+
+            if (cachedBitmap != null && !zoomChanged && !bearingChanged && !colorChanged) {
+                // Re-use existing bitmap
+                return cachedBitmap!!
+            }
+
+            // Round bearing to nearest 15 degrees to reduce cache size
+            val roundedBearing = (Math.round(bearing / 15f) * 15)
+
+            // Create cache key
+            val cacheKey = "${roundedBearing}_${Math.round(mapView.zoomLevelDouble)}_$color"
+
+            // Check if we have this icon in the global cache
+            if (directionIconCache.containsKey(cacheKey)) {
+                val drawable = directionIconCache[cacheKey]!!
+                cachedBitmap = drawable.bitmap
+            } else {
+                // Create new icon
+                val drawable = createUserLocationIcon(color, bearing, mapView.zoomLevelDouble)
+                directionIconCache[cacheKey] = drawable as BitmapDrawable
+                cachedBitmap = drawable.bitmap
+
+                // Limit cache size to prevent memory issues
+                if (directionIconCache.size > 48) { // Allow more cache entries for different zoom levels
+                    val iterator = directionIconCache.iterator()
+                    if (iterator.hasNext()) {
+                        iterator.next()
+                        iterator.remove()
+                    }
+                }
+            }
+
+            // Update last used values
+            lastUsedBearing = bearing
+            lastUsedZoom = mapView.zoomLevelDouble
+            lastUsedColor = color
+
+            return cachedBitmap!!
         }
 
         /**
@@ -117,9 +189,6 @@ class MarkerManager(private val context: Context) {
                 // Save canvas state to restore after rotation
                 canvas.save()
 
-                // Log the current bearing value for debugging
-                Log.d(TAG, "Drawing direction arrow with bearing: $bearing (independent of map rotation)")
-
                 // Rotate canvas based purely on the bearing from GPS/compass
                 // This is independent of map rotation
                 canvas.rotate(bearing, centerX, centerY)
@@ -176,39 +245,37 @@ class MarkerManager(private val context: Context) {
         bearing: Float? = null
     ) {
         try {
-            // Store bearing for direction indicator
-            if (bearing != null) {
-                userBearing = bearing
-                Log.d(TAG, "User bearing updated: $userBearing")
-            }
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - lastUpdateTime < 200) return
 
-            // Store current zoom level for accuracy circle scaling
-            currentZoomLevel = mapView.zoomLevelDouble
-            Log.d(TAG, "Current zoom: $currentZoomLevel, Radius: ${calculateAccuracyRadius(currentZoomLevel)}")
+            // Update last position and time
+            lastUserPosition = position
+            lastUpdateTime = currentTime
 
-            // Create or update user marker
+            // Create or update marker
             if (userMarker == null) {
-                // Create our custom direction marker that ignores map rotation
                 userMarker = DirectionMarker(mapView).apply {
                     this.position = position
                     this.color = color
-                    this.bearing = userBearing
+                    bearing?.let { this.bearing = it }
+                    // Removed setAnchor() since we're using Overlay
                 }
-
-                // Add our custom overlay
                 mapView.overlays.add(userMarker)
             } else {
                 userMarker?.apply {
                     this.position = position
                     this.color = color
-                    this.bearing = userBearing
+                    bearing?.let { this.bearing = it }
                 }
             }
 
-            // Ensure map is refreshed
+            // Bring marker to front
+            mapView.overlays.remove(userMarker)
+            mapView.overlays.add(userMarker)
+
             mapView.invalidate()
         } catch (e: Exception) {
-            Log.e(TAG, "Error updating user location marker: ${e.message}")
+            Log.e(TAG, "Error updating user marker: ${e.message}")
         }
     }
 

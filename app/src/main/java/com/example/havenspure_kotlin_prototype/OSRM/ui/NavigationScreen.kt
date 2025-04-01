@@ -48,7 +48,7 @@ import kotlinx.coroutines.launch
  * @param onBackClick Callback for the back button
  * @param locationViewModel ViewModel providing user location updates
  */
-enum class NavigationUiState { LOADING, READY }
+enum class NavigationUiState { LOADING, PARTIAL, READY }
 
 @SuppressLint("ClickableViewAccessibility")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -99,15 +99,34 @@ fun NavigationScreen(
         }
     }
 
+    // Update UI state based on minimal readiness
+    LaunchedEffect(mapViewModel.isMinimallyReady, mapViewModel.isLoading) {
+        if (mapViewModel.isMinimallyReady.value && !mapViewModel.isLoading.value) {
+            // Show map with just user location as soon as tiles are loaded
+            if (uiState == NavigationUiState.LOADING) {
+                uiState = NavigationUiState.PARTIAL
+            }
+        }
+    }
+
     // Map visibility state with animation - tied to UI state
+    // Map visibility state with animation - show partially in PARTIAL state
     val mapAlpha by animateFloatAsState(
-        targetValue = if (uiState == NavigationUiState.READY) 1f else 0f,
+        targetValue = when (uiState) {
+            NavigationUiState.LOADING -> 0f
+            NavigationUiState.PARTIAL -> 0.7f
+            NavigationUiState.READY -> 1f
+        },
         label = "mapAlpha"
     )
 
-    // Loading visibility state with animation - inverse of UI state
+// Loading visibility state with animation
     val loadingAlpha by animateFloatAsState(
-        targetValue = if (uiState == NavigationUiState.LOADING) 1f else 0f,
+        targetValue = when (uiState) {
+            NavigationUiState.LOADING -> 1f
+            NavigationUiState.PARTIAL -> 0.3f
+            NavigationUiState.READY -> 0f
+        },
         label = "loadingAlpha"
     )
 

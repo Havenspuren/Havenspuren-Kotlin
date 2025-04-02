@@ -217,6 +217,19 @@ class NavigationManager(private val context: Context) : SensorEventListener {
     }
 
     /**
+     * Get the absolute device bearing from sensors, regardless of map orientation
+     * This method ensures we always have access to the physical device orientation
+     *
+     * @return Raw device compass bearing in degrees (0-360, 0 = North)
+     */
+    fun getAbsoluteDeviceBearing(): Float {
+        // Simply return the current bearing from sensors without any adjustment
+        // This ensures the arrow direction is based only on device orientation,
+        // not affected by map rotation
+        return currentBearing.value
+    }
+
+    /**
      * Clean up resources when done
      */
     fun cleanup() {

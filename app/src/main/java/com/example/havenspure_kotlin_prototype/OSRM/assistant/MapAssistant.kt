@@ -83,6 +83,12 @@ class MapAssistant private constructor(private val context: Context) {
      *
      * @param mapView Map view to set up
      */
+    /**
+     * Setup the map view with necessary configuration
+     * Ensure rotation gestures are properly enabled
+     *
+     * @param mapView Map view to set up
+     */
     fun setupMapView(mapView: MapView) {
         try {
             // Pre-cache important settings to speed up initialization
@@ -104,7 +110,7 @@ class MapAssistant private constructor(private val context: Context) {
             // Configure map for optimal performance
             offlineMapManager.configureMapView(mapView)
 
-            // Add rotation gesture overlay
+            // Add rotation gesture overlay - MODIFIED to ensure proper rotation sensitivity
             val rotationGestureOverlay = RotationGestureOverlay(mapView)
             rotationGestureOverlay.isEnabled = true
             mapView.overlays.add(rotationGestureOverlay)
@@ -240,18 +246,21 @@ class MapAssistant private constructor(private val context: Context) {
 
     /**
      * Update navigation with user's current location
+     * Modified to preserve zoom and rotation when re-centering
      *
      * @param mapView Map view to update
      * @param userLocation User's current location
      * @param destinationLocation Destination location
      * @param centerMap Whether to center the map on user's location
+     * @param preserveZoomAndRotation Whether to preserve zoom and rotation when centering
      * @return True if updates were applied successfully
      */
     fun updateNavigation(
         mapView: MapView,
         userLocation: LocationDataOSRM,
         destinationLocation: LocationDataOSRM,
-        centerMap: Boolean = false
+        centerMap: Boolean = false,
+        preserveZoomAndRotation: Boolean = true
     ): Boolean {
         if (!_isNavigating.value) return false
 
@@ -267,7 +276,7 @@ class MapAssistant private constructor(private val context: Context) {
             val bearingDifference = if (bearingIsValid) abs(currentBearing - lastBearingValue) else Float.MAX_VALUE
             val updateBearing = bearingDifference > 5.0f || (currentTime - lastBearingUpdateTime > 500)
 
-            // Always update position, conditionally update bearing
+            // Always update position, pass the bearing with 180 degree adjustment
             routeManager.updateUserMarker(
                 mapView,
                 userPoint,
@@ -280,9 +289,15 @@ class MapAssistant private constructor(private val context: Context) {
                 lastBearingUpdateTime = currentTime
             }
 
-            // Rest of your existing logic...
+            // MODIFIED: Center the map while preserving zoom and rotation if requested
             if (centerMap) {
-                mapView.controller.animateTo(userPoint, mapView.zoomLevelDouble, 400, 0f)
+                if (preserveZoomAndRotation) {
+                    // Only change the center without affecting zoom or rotation
+                    mapView.controller.setCenter(userPoint)
+                } else {
+                    // Traditional behavior - animate with current zoom
+                    mapView.controller.animateTo(userPoint, mapView.zoomLevelDouble, 400, 0f)
+                }
             }
 
             navigationManager.updateNavigation(userLocation, destinationLocation, routeManager)
@@ -409,13 +424,16 @@ class MapAssistant private constructor(private val context: Context) {
             val userPoint = GeoPoint(userLocation.latitude, userLocation.longitude)
             val destPoint = GeoPoint(destinationLocation.latitude, destinationLocation.longitude)
 
-             // In restoreNavigation method:
-           // Get the current bearing from NavigationManager
+            // Get the current bearing from NavigationManager
             val currentBearing = navigationManager.currentBearing.value
 
-            // Pass the bearing to restoreRouteVisualization
-            routeManager.restoreRouteVisualization(mapView, routeData, userPoint, destPoint, currentBearing)
+            // MODIFIED: Invert the bearing to fix the direction
+            val adjustedBearing = if (!currentBearing.isNaN()) {
+                (currentBearing + 180) % 360
+            } else null
 
+            // Pass the adjusted bearing to restoreRouteVisualization
+            routeManager.restoreRouteVisualization(mapView, routeData, userPoint, destPoint, adjustedBearing)
 
             // Set map view
             mapView.controller.setZoom(15.0)

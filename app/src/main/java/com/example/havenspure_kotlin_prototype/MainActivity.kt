@@ -59,7 +59,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
-import com.example.havenspure_kotlin_prototype.Map.offline.MapInitializer
 import com.example.havenspure_kotlin_prototype.ViewModels.LocationViewModel
 import com.example.havenspure_kotlin_prototype.graph.Graph
 import com.example.havenspure_kotlin_prototype.navigation.AppNavHost
@@ -68,10 +67,7 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     // Add the map initializer as a property
-    private lateinit var mapInitializer: MapInitializer
 
-    // Location ViewModel
-    private val locationViewModel: LocationViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,10 +77,6 @@ class MainActivity : ComponentActivity() {
             Graph.provide(applicationContext)
         }
 
-        // Initialize the map services
-        mapInitializer = MapInitializer(this)
-        mapInitializer.initialize() // Initialize map
-        mapInitializer.initializeRouting() // Initialize routing
 
         setContent {
             // Initialize navigation controller
@@ -102,10 +94,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Provide a way for components to access the map initializer
-    fun getMapInitializer(): MapInitializer {
-        return mapInitializer
-    }
+
 
     override fun onDestroy() {
         super.onDestroy()

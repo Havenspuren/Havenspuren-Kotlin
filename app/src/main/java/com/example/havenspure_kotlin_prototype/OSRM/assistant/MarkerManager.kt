@@ -38,6 +38,9 @@ class MarkerManager(private val context: Context) {
     /**
      * Custom marker class that maintains its own bearing regardless of map rotation
      */
+    /**
+     * Custom marker class that maintains its own bearing regardless of map rotation
+     */
     inner class DirectionMarker(mapView: MapView) : Overlay() {
         var position: GeoPoint = GeoPoint(0.0, 0.0)
         var color: Int = Color.BLUE
@@ -53,25 +56,16 @@ class MarkerManager(private val context: Context) {
         override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
             if (shadow || position.latitude == 0.0) return
 
-            // Get or create bitmap
-            val bitmap = lastBitmap ?: run {
-                val drawable = createUserLocationIcon(color, bearing, mapView.zoomLevelDouble)
-                val bitmap = Bitmap.createBitmap(
-                    drawable.intrinsicWidth,
-                    drawable.intrinsicHeight,
-                    Bitmap.Config.ARGB_8888
-                )
-                val bitmapCanvas = Canvas(bitmap)
-                drawable.setBounds(0, 0, bitmapCanvas.width, bitmapCanvas.height)
-                drawable.draw(bitmapCanvas)
-                bitmap.also { lastBitmap = it } // Cache the bitmap
-            }
+            // Use getOrCreateBitmap instead of the current bitmap creation logic
+            val bitmap = getOrCreateBitmap()
 
             val screenPos = mapView.projection.toPixels(position, null)
 
-            // Account for map rotation
+            // Save canvas state for drawing
             canvas.save()
-            canvas.rotate(-mapView.mapOrientation, screenPos.x.toFloat(), screenPos.y.toFloat())
+
+            // We no longer counteract map rotation here
+            // Removed: canvas.rotate(-mapView.mapOrientation, screenPos.x.toFloat(), screenPos.y.toFloat())
 
             canvas.drawBitmap(
                 bitmap,
@@ -129,6 +123,10 @@ class MarkerManager(private val context: Context) {
             return cachedBitmap!!
         }
 
+        /**
+         * Create a custom icon for user location with direction indicator and accuracy circle
+         * Note: The bearing value received here is already adjusted in updateNavigation
+         */
         /**
          * Create a custom icon for user location with direction indicator and accuracy circle
          */
@@ -189,9 +187,8 @@ class MarkerManager(private val context: Context) {
                 // Save canvas state to restore after rotation
                 canvas.save()
 
-                // Rotate canvas based purely on the bearing from GPS/compass
-                // This is independent of map rotation
-                canvas.rotate(bearing, centerX, centerY)
+                // MODIFIED: Add 180 degrees to the bearing to rotate the arrow correctly
+                canvas.rotate(bearing + 180, centerX, centerY)
 
                 // Create arrow/triangle shape pointing outward from the circle
                 // Position it at the edge of the inner circle
@@ -203,7 +200,7 @@ class MarkerManager(private val context: Context) {
                 // Doubled width as requested
                 val arrowWidth = innerCircleRadius * 1.0f
 
-                // Define the arrow pointing outward
+                // Define the arrow pointing outward - keep original drawing unchanged
                 directionPath.moveTo(centerX, centerY - arrowBase - arrowLength)  // Tip of arrow
                 directionPath.lineTo(centerX - arrowWidth/2, centerY - arrowBase) // Bottom left
                 directionPath.lineTo(centerX + arrowWidth/2, centerY - arrowBase) // Bottom right
@@ -294,22 +291,25 @@ class MarkerManager(private val context: Context) {
         title: String = "Ziel"
     ) {
         try {
-            // Create or update destination marker
-            if (destinationMarker == null) {
-                destinationMarker = Marker(mapView).apply {
-                    setPosition(position)
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    icon = createDestinationIcon(color)
-                    this.title = title
-                    infoWindow = null // No info window
-                }
-                mapView.overlays.add(destinationMarker)
-            } else {
-                destinationMarker?.apply {
-                    setPosition(position)
-                    this.title = title
-                }
+            // Remove existing destination marker if it exists to avoid duplicates
+            if (destinationMarker != null) {
+                mapView.overlays.remove(destinationMarker)
             }
+
+            // Create fresh destination marker
+            destinationMarker = Marker(mapView).apply {
+                setPosition(position)
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                icon = createDestinationIcon(color)
+                this.title = title
+                infoWindow = null // No info window
+            }
+
+            // Ensure marker is added to overlays
+            mapView.overlays.add(destinationMarker)
+
+            // Log successful marker update
+            Log.d(TAG, "Destination marker updated at position: ${position.latitude}, ${position.longitude}")
 
             // Ensure map is refreshed
             mapView.invalidate()
@@ -317,7 +317,6 @@ class MarkerManager(private val context: Context) {
             Log.e(TAG, "Error updating destination marker: ${e.message}")
         }
     }
-
     /**
      * Draw a route path on the map
      *

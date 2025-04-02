@@ -132,7 +132,7 @@ class RouteManager(
      *
      * @param mapView Map view to update
      * @param position User's new position
-     * @param bearing Optional bearing (direction) of user
+     * @param bearing Optional bearing (direction) of user - this is already adjusted in updateNavigation
      * @return True if map was updated successfully
      */
     fun updateUserMarker(
@@ -141,6 +141,7 @@ class RouteManager(
         bearing: Float? = null
     ): Boolean {
         return try {
+            // The bearing is already adjusted in updateNavigation, so we pass it directly here
             markerManager.updateUserLocationMarker(
                 mapView,
                 position,
@@ -240,12 +241,13 @@ class RouteManager(
 
     /**
      * Restore route visualization from saved route data
+     * Modified to ensure bearing is handled correctly
      *
      * @param mapView Map view to display route on
      * @param routeData Previously calculated route
      * @param userPoint Current user location
      * @param destPoint Destination point
-     * @param currentBearing Current bearing from NavigationManager (optional)
+     * @param currentBearing Current bearing from NavigationManager (optional) - raw device bearing
      * @return True if restoration was successful
      */
     fun restoreRouteVisualization(
@@ -262,9 +264,16 @@ class RouteManager(
             // Clear any existing overlays to prevent duplicates
             markerManager.clearRouteOverlays(mapView)
 
-            // Update markers first
+            // Update markers first - pass the raw bearing directly without any adjustment
             markerManager.updateUserLocationMarker(mapView, userPoint, userMarkerColor, currentBearing)
-            markerManager.updateDestinationMarker(mapView, destPoint, destinationMarkerColor)
+
+            // Explicitly update destination marker - ensure it's visible and properly positioned
+            markerManager.updateDestinationMarker(
+                mapView,
+                destPoint,
+                destinationMarkerColor,
+                "Ziel"  // Ensure we provide a title for the marker
+            )
 
             // Draw route
             markerManager.drawRoute(mapView, routeData.points, routeColor)

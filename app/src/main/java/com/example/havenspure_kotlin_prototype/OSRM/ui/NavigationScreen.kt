@@ -33,7 +33,13 @@ import com.example.havenspure_kotlin_prototype.ui.theme.PrimaryColor
 import org.osmdroid.views.MapView
 import android.view.MotionEvent
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -142,11 +148,14 @@ fun NavigationScreen(
     val destinationMarkerColor = Color.Red.toArgb()
 
     // Function to start the follow timer
+    // Function to start the follow timer
     fun startFollowTimer() {
         followTimer?.cancel()
         followTimer = lifecycleOwner.lifecycleScope.launch {
             delay(13000) // 13 seconds delay
             mapViewModel.setFollowUserLocation(true)
+            // MODIFIED: Call centerOnUserLocation with preserveZoomAndRotation=true
+            mapViewModel.centerOnUserLocation(mapView, preserveZoomAndRotation = true)
             userMovedMap = false
         }
     }
@@ -312,6 +321,7 @@ fun NavigationScreen(
                 }
 
                 // Map container
+                // Map container
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -383,9 +393,10 @@ fun NavigationScreen(
                     FloatingActionButton(
                         onClick = {
                             userLocationState?.let { userLocation ->
-                                // Center on user and enable follow mode
+                                // When user explicitly clicks the button, we don't preserve zoom and rotation
+                                // This allows them to reset to default view if desired
                                 mapViewModel.setFollowUserLocation(true)
-                                mapViewModel.centerOnUserLocation(mapView)
+                                mapViewModel.centerOnUserLocation(mapView, preserveZoomAndRotation = false)
                             }
                         },
                         modifier = Modifier
@@ -407,3 +418,6 @@ fun NavigationScreen(
         }
     }
 }
+
+
+

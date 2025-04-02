@@ -344,14 +344,14 @@ class MapViewModel(private val context: Context) : ViewModel() {
     /**
      * Update navigation with current user location
      */
-    fun updateNavigation(mapView: MapView): Boolean {
-        // Implement throttling for navigation updates
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - lastNavigationUpdateTime < 250) { // Max 4 updates per second
-            return true // Return true to indicate "success" without actually updating
-        }
-        lastNavigationUpdateTime = currentTime
-
+    /**
+     * Update navigation with current user location
+     * Modified to include preserveZoomAndRotation parameter
+     */
+    fun updateNavigation(
+        mapView: MapView,
+        preserveZoomAndRotation: Boolean = true
+    ): Boolean {
         val userLoc = _userLocation.value
         val destLoc = _destinationLocation.value
 
@@ -361,7 +361,15 @@ class MapViewModel(private val context: Context) : ViewModel() {
 
         // Only center map if follow mode is active
         val centerMap = _followUserLocation.value
-        val result = mapAssistant.updateNavigation(mapView, userLoc, destLoc, centerMap)
+
+        // Pass the preserveZoomAndRotation parameter to MapAssistant
+        val result = mapAssistant.updateNavigation(
+            mapView,
+            userLoc,
+            destLoc,
+            centerMap,
+            preserveZoomAndRotation
+        )
 
         // Update UI state
         _navigationInstruction.value = mapAssistant.getCurrentInstruction()
@@ -374,12 +382,28 @@ class MapViewModel(private val context: Context) : ViewModel() {
     /**
      * Center map on user location
      */
-    fun centerOnUserLocation(mapView: MapView) {
+    /**
+     * Center map on user location while preserving current zoom and rotation
+     * Modified to preserve the camera angle and zoom level
+     */
+    fun centerOnUserLocation(mapView: MapView, preserveZoomAndRotation: Boolean = false) {
         val userLoc = _userLocation.value ?: return
 
         // Set follow mode to true when explicitly centering
         _followUserLocation.value = true
-        mapView.controller.animateTo(GeoPoint(userLoc.latitude, userLoc.longitude))
+
+        if (preserveZoomAndRotation) {
+            // Only change the center position without affecting zoom or rotation
+            mapView.controller.setCenter(GeoPoint(userLoc.latitude, userLoc.longitude))
+        } else {
+            // Traditional behavior - animate to user location with default zoom
+            mapView.controller.animateTo(
+                GeoPoint(userLoc.latitude, userLoc.longitude),
+                mapView.zoomLevelDouble,
+                400,
+                0f
+            )
+        }
     }
 
     /**

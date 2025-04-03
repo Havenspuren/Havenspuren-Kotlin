@@ -130,6 +130,9 @@ class MarkerManager(private val context: Context) {
         /**
          * Create a custom icon for user location with direction indicator and accuracy circle
          */
+        /**
+         * Create a custom icon for user location with direction indicator and accuracy circle
+         */
         private fun createUserLocationIcon(color: Int, bearing: Float, zoomLevel: Double): Drawable {
             val centerSize = 48f // Center dot size as float
             val glowRadius = calculateAccuracyRadius(zoomLevel) // Dynamic accuracy circle based on zoom
@@ -187,8 +190,9 @@ class MarkerManager(private val context: Context) {
                 // Save canvas state to restore after rotation
                 canvas.save()
 
-                // MODIFIED: Add 180 degrees to the bearing to rotate the arrow correctly
-                canvas.rotate(bearing + 180, centerX, centerY)
+                // FIXED: Remove the 180-degree offset that was causing the arrow to point backwards
+                // Changed from: canvas.rotate(bearing + 180, centerX, centerY)
+                canvas.rotate(bearing, centerX, centerY)
 
                 // Create arrow/triangle shape pointing outward from the circle
                 // Position it at the edge of the inner circle

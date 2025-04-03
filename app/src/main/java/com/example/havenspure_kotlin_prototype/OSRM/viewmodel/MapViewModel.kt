@@ -81,6 +81,34 @@ class MapViewModel(private val context: Context) : ViewModel() {
     // Route cache with key as "startLat,startLng;destLat,destLng"
     private val routeCache = mutableMapOf<String, RouteData>()
 
+
+    // Add this to your MapViewModel.kt file
+// Add these variables near the top of the class with other declarations
+
+   // private val TAG = "MapViewModel" // If not already defined
+    private var lastLoggedBearing = -999f
+    private val BEARING_LOG_THRESHOLD = 10f // Only log when bearing changes by more than 10 degrees
+
+    // Add this method to your class
+    private fun logBearingData(bearing: Float?, adjustedBearing: Float?) {
+        // Skip logging if bearing is not valid
+        if (bearing == null || bearing.isNaN()) return
+
+        // Only log when bearing changes significantly to avoid spamming the log
+        if (Math.abs(bearing - lastLoggedBearing) > BEARING_LOG_THRESHOLD) {
+            Log.d(TAG, "BEARING DATA: Raw=${bearing.toInt()}°, " +
+                    "Adjusted=${adjustedBearing?.toInt() ?: "N/A"}°, " +
+                    "Arrow points at: ${((bearing + 180) % 360).toInt()}°")
+            lastLoggedBearing = bearing
+        }
+    }
+
+// In your updateNavigation method, add this line where you get the bearing value
+// (Look for where navigationManager.currentBearing.value is accessed)
+
+    // Log bearing data for debugging
+
+
     init {
         // Initialize map assistant
         mapAssistant.initialize()
@@ -343,10 +371,7 @@ class MapViewModel(private val context: Context) : ViewModel() {
 
     /**
      * Update navigation with current user location
-     */
-    /**
-     * Update navigation with current user location
-     * Modified to include preserveZoomAndRotation parameter
+     * Modified to include preserveZoomAndRotation parameter and bearing logging
      */
     fun updateNavigation(
         mapView: MapView,
@@ -371,6 +396,13 @@ class MapViewModel(private val context: Context) : ViewModel() {
             preserveZoomAndRotation
         )
 
+        // Get the current bearing for logging
+        val currentBearing = mapAssistant.getCurrentBearing()
+        val adjustedBearing = if (!currentBearing.isNaN()) (currentBearing + 180) % 360 else null
+
+        // Log bearing data for debugging
+        logBearingData(currentBearing, adjustedBearing)
+
         // Update UI state
         _navigationInstruction.value = mapAssistant.getCurrentInstruction()
         _remainingDistance.value = mapAssistant.getRemainingDistance()
@@ -380,11 +412,8 @@ class MapViewModel(private val context: Context) : ViewModel() {
     }
 
     /**
-     * Center map on user location
-     */
-    /**
-     * Center map on user location while preserving current zoom and rotation
-     * Modified to preserve the camera angle and zoom level
+     * Center map on user location with improved tile loading behavior
+     * Uses a temporary lower zoom level to avoid the grid pattern when tiles are loading
      */
     fun centerOnUserLocation(mapView: MapView, preserveZoomAndRotation: Boolean = false) {
         val userLoc = _userLocation.value ?: return
@@ -392,13 +421,44 @@ class MapViewModel(private val context: Context) : ViewModel() {
         // Set follow mode to true when explicitly centering
         _followUserLocation.value = true
 
+        // Create GeoPoint from user location
+        val userGeoPoint = GeoPoint(userLoc.latitude, userLoc.longitude)
+
         if (preserveZoomAndRotation) {
-            // Only change the center position without affecting zoom or rotation
-            mapView.controller.setCenter(GeoPoint(userLoc.latitude, userLoc.longitude))
+            // Store current zoom and rotation
+            val currentZoom = mapView.zoomLevelDouble
+            val currentRotation = mapView.mapOrientation
+
+            // Only use zoom management if zoom is high (causing tile loading issues)
+            if (currentZoom > 16.0) {
+                // Use a temporary lower zoom level (has better tile coverage)
+                val tempZoom = 14.0
+
+                // First set center position with lower zoom to show already cached tiles
+                mapView.controller.setZoom(tempZoom)
+                mapView.controller.setCenter(userGeoPoint)
+
+                // Launch a coroutine to restore the zoom after a short delay
+                viewModelScope.launch {
+                    // Wait for base tiles to load at the lower zoom level
+                    delay(300)
+
+                    // Now animate to the original zoom level
+                    mapView.controller.animateTo(
+                        userGeoPoint,
+                        currentZoom,
+                        500, // Animation duration in milliseconds
+                        currentRotation
+                    )
+                }
+            } else {
+                // For lower zoom levels, just set the center without changing zoom
+                mapView.controller.setCenter(userGeoPoint)
+            }
         } else {
             // Traditional behavior - animate to user location with default zoom
             mapView.controller.animateTo(
-                GeoPoint(userLoc.latitude, userLoc.longitude),
+                userGeoPoint,
                 mapView.zoomLevelDouble,
                 400,
                 0f

@@ -148,6 +148,13 @@ class MapAssistant private constructor(private val context: Context) {
         // Pass colors to route manager
         routeManager.setColors(routeColor, userMarkerColor, destinationMarkerColor)
     }
+    /**
+     * Get current device bearing from NavigationManager
+     * @return Current bearing in degrees (0-360), or NaN if no bearing available
+     */
+    fun getCurrentBearing(): Float {
+        return navigationManager.currentBearing.value
+    }
 
 
     /**
@@ -194,7 +201,7 @@ class MapAssistant private constructor(private val context: Context) {
 
             // Set initial map position
             mapView.controller.setCenter(startPoint)
-            mapView.controller.setZoom(15.0)
+            mapView.controller.setZoom(17.0)
 
             // Signal navigation has started immediately to show minimal UI
             _isNavigating.value = true

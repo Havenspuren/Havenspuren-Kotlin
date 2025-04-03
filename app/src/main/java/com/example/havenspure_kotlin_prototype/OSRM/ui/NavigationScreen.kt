@@ -32,6 +32,7 @@ import com.example.havenspure_kotlin_prototype.ui.theme.GradientStart
 import com.example.havenspure_kotlin_prototype.ui.theme.PrimaryColor
 import org.osmdroid.views.MapView
 import android.view.MotionEvent
+import android.view.View
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.shape.CircleShape
@@ -44,7 +45,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
+import org.osmdroid.api.IGeoPoint
 /**
  * NavigationScreen displays a turn-by-turn navigation interface using the MapAssistant library.
  * This screen provides directions to help the user find a tour location
@@ -93,6 +94,34 @@ fun NavigationScreen(
     // Variables to track manual map movement
     var userMovedMap by remember { mutableStateOf(false) }
     var followTimer by remember { mutableStateOf<Job?>(null) }
+    // Store the initial map center when user starts touching
+    // Store the initial map center when user starts touching
+    var initialMapCenter by remember { mutableStateOf<IGeoPoint?>(null) }
+// Minimum distance in meters to consider as a "real" user movement
+    val MIN_MOVEMENT_THRESHOLD = 100.0 // 100 meters threshold
+
+// Make sure you have this import
+
+    // Add this helper function to calculate distance between two IGeoPoints (in meters)
+    fun calculateDistanceInMeters(point1: IGeoPoint, point2: IGeoPoint): Double {
+        val earthRadius = 6371000.0 // Earth radius in meters
+
+        val lat1Rad = Math.toRadians(point1.latitude)
+        val lat2Rad = Math.toRadians(point2.latitude)
+        val lon1Rad = Math.toRadians(point1.longitude)
+        val lon2Rad = Math.toRadians(point2.longitude)
+
+        val dLat = lat2Rad - lat1Rad
+        val dLon = lon2Rad - lon1Rad
+
+        val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1Rad) * Math.cos(lat2Rad) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2)
+        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+
+        return earthRadius * c
+    }
+
 
     // Update UI state based on combined conditions
     LaunchedEffect(isFullyReady, isLoading, isCalculatingRoute) {
@@ -331,12 +360,14 @@ fun NavigationScreen(
                     AndroidView(
                         factory = {
                             // Setup the map touch listener
-                            mapView.setOnTouchListener { _, event ->
+                            mapView.setOnTouchListener { view: View, event: MotionEvent ->
                                 when (event.action) {
                                     MotionEvent.ACTION_DOWN -> {
                                         // User started touching the map
                                         if (followUserLocation) {
-                                            userMovedMap = true
+                                            // Store initial map center position
+                                            initialMapCenter = mapView.mapCenter
+                                            // Don't set userMovedMap yet - wait for ACTION_UP to determine if movement was significant
                                             mapViewModel.setFollowUserLocation(false)
                                             followTimer?.cancel()
                                         }
@@ -344,8 +375,19 @@ fun NavigationScreen(
                                     }
                                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                                         // User stopped touching the map
-                                        if (userMovedMap) {
-                                            startFollowTimer()
+                                        initialMapCenter?.let { initialCenter ->
+                                            // Calculate the distance between initial position and current position
+                                            val currentCenter = mapView.mapCenter
+                                            val distanceMoved = calculateDistanceInMeters(initialCenter, currentCenter)
+
+                                            // Only consider it a user movement if distance exceeds threshold
+                                            if (distanceMoved > MIN_MOVEMENT_THRESHOLD) {
+                                                userMovedMap = true
+                                                startFollowTimer() // Start the follow timer only if significant movement
+                                            }
+
+                                            // Clear the initial center
+                                            initialMapCenter = null
                                         }
                                         false // Allow OSMDroid to handle the event
                                     }

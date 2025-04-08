@@ -20,14 +20,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.example.havenspure_kotlin_prototype.Data.LocationData
+import com.example.havenspure_kotlin_prototype.data.LocationData
 import com.example.havenspure_kotlin_prototype.Graph.RoutingGraph
 import com.example.havenspure_kotlin_prototype.ViewModels.LocationViewModel
 import com.example.havenspure_kotlin_prototype.models.Tour
 import com.example.havenspure_kotlin_prototype.ui.theme.GradientEnd
 import com.example.havenspure_kotlin_prototype.ui.theme.GradientStart
 import com.example.havenspure_kotlin_prototype.ui.theme.PrimaryColor
-import kotlinx.coroutines.launch
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint

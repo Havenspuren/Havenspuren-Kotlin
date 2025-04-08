@@ -17,24 +17,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.havenspure_kotlin_prototype.Data.LocationData
 import com.example.havenspure_kotlin_prototype.R
-import com.example.havenspure_kotlin_prototype.ViewModels.LocationViewModel
-import com.example.havenspure_kotlin_prototype.models.Tour
-import com.example.havenspure_kotlin_prototype.models.tours
+import com.example.havenspure_kotlin_prototype.ViewModels.ToursUiState
+import com.example.havenspure_kotlin_prototype.data.model.TourWithProgress
 import com.example.havenspure_kotlin_prototype.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ToursMainScreen(
+    uiState: ToursUiState,
     onOpenDrawer: () -> Unit,
-    onTourSelected: (Tour) -> Unit,
+    onTourSelected: (String) -> Unit,
     onTourInfo: (String) -> Unit
 ) {
     Scaffold(
@@ -73,24 +72,82 @@ fun ToursMainScreen(
                     )
                 )
         ) {
-            // Tour cards list
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(tours) { tour ->
-                    TourCard(
-                        tour = tour,
-                        onContinueClick = { onTourSelected(tour) },
-                        onInfoClick = { onTourInfo(tour.id) }
+            when (uiState) {
+                is ToursUiState.Loading -> {
+                    // Show loading indicator
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center),
+                        color = Color.White
                     )
                 }
 
-                // Add some space at the bottom
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
+                is ToursUiState.Empty -> {
+                    // Show empty state
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "Keine Touren verfügbar",
+                            fontSize = 18.sp,
+                            color = Color.White
+                        )
+                    }
+                }
+
+                is ToursUiState.Success -> {
+                    // Tour cards list
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        items(uiState.tours) { tourWithProgress ->
+                            TourCard(
+                                tourWithProgress = tourWithProgress,
+                                onContinueClick = { onTourSelected(tourWithProgress.tour.id) },
+                                onInfoClick = { onTourInfo(tourWithProgress.tour.id) }
+                            )
+                        }
+
+                        // Add some space at the bottom
+                        item {
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+                    }
+                }
+
+                is ToursUiState.Error -> {
+                    // Show error state
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "Fehler: ${uiState.message}",
+                            fontSize = 18.sp,
+                            color = Color.White
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Button(
+                            onClick = { /* Retry loading tours */ },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.White,
+                                contentColor = TextDark
+                            )
+                        ) {
+                            Text("Erneut versuchen")
+                        }
+                    }
                 }
             }
         }
@@ -99,10 +156,22 @@ fun ToursMainScreen(
 
 @Composable
 fun TourCard(
-    tour: Tour,
+    tourWithProgress: TourWithProgress,
     onContinueClick: () -> Unit,
     onInfoClick: () -> Unit
 ) {
+    val tour = tourWithProgress.tour
+    val progress = tourWithProgress.userProgress
+    val progressPercentage = progress?.completionPercentage?.toInt() ?: 0
+
+    // Load image from resources
+    val context = LocalContext.current
+    val imageResId = context.resources.getIdentifier(
+        tour.imageUrl.removeSuffix(".jpg"),
+        "drawable",
+        context.packageName
+    )
+
     Card(
         modifier = Modifier
             .fillMaxWidth(),
@@ -137,7 +206,7 @@ fun TourCard(
 
                 // Progress bar
                 LinearProgressIndicator(
-                    progress = tour.progress / 100f,
+                    progress = progressPercentage / 100f,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(4.dp),
@@ -148,7 +217,7 @@ fun TourCard(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = "Fortschritt: ${tour.progress}%",
+                    text = "Fortschritt: ${progressPercentage}%",
                     fontSize = 14.sp,
                     color = Color.White
                 )
@@ -194,11 +263,11 @@ fun TourCard(
                             .defaultMinSize(minWidth = 140.dp)
                     ) {
                         Text(
-                            text = if (tour.progress > 0) "FORTSETZEN" else "STARTEN",
+                            text = if (progressPercentage > 0) "FORTSETZEN" else "STARTEN",
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
                             maxLines = 1, // Prevent text wrapping
-                            overflow = TextOverflow.Visible // Ensure text doesn't get cut off with ellipsis
+                            overflow = TextOverflow.Visible
                         )
                     }
                 }
@@ -212,9 +281,8 @@ fun TourCard(
                     .background(Color.White),
                 contentAlignment = Alignment.Center
             ) {
-                // If you have actual images, replace this with your image resources
                 Image(
-                    painter = painterResource(id = tour.imageResId ?: R.drawable.ic_launcher_foreground),
+                    painter = painterResource(id = if (imageResId != 0) imageResId else R.drawable.ic_launcher_foreground),
                     contentDescription = tour.title,
                     modifier = Modifier
                         .fillMaxSize()

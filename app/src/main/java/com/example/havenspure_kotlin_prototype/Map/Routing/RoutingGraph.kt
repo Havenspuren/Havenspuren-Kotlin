@@ -6,7 +6,7 @@ import android.graphics.Color
 import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.util.Log
-import com.example.havenspure_kotlin_prototype.Data.LocationData
+import com.example.havenspure_kotlin_prototype.data.LocationData
 import com.example.havenspure_kotlin_prototype.Map.Routing.MarkerCreationHelpers
 import com.example.havenspure_kotlin_prototype.Map.Routing.RouteDebugger
 import com.example.havenspure_kotlin_prototype.Map.Routing.RouteValidator
@@ -21,16 +21,13 @@ import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
 import java.io.File
 import android.preference.PreferenceManager
-import com.android.tools.screenshot.isValid
 import com.example.havenspure_kotlin_prototype.navigation.OSRMRouter
 import com.example.havenspure_kotlin_prototype.navigation.OfflinePathRouter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.min
-import kotlin.math.max
 
 /**
  * Centralized routing management singleton that coordinates all navigation services

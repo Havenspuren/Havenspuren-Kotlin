@@ -37,7 +37,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.example.havenspure_kotlin_prototype.Data.LocationData
+import com.example.havenspure_kotlin_prototype.data.LocationData
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
@@ -47,7 +47,6 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.*
 
 /**

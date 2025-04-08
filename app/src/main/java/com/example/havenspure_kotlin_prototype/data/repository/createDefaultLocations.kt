@@ -1,0 +1,194 @@
+package com.example.havenspure_kotlin_prototype.data.repository
+
+import com.example.havenspure_kotlin_prototype.data.model.Location
+
+class Default(){
+    companion object {
+         fun createDefaultLocations(tourId: String): List<Location> {
+            return listOf(
+                Location(
+                    id = "${tourId}_1",
+                    tourId = tourId,
+                    name = "Kaiser-Wilhelm-Denkmal",
+                    order = 1,
+                    latitude = 53.517993,
+                    longitude = 8.121171,
+                    audioFileName = "002Kaiser-Wilhelm-Denkmal_mixdown",
+                    bubbleText = "Helene startet ihre Suche früh am nächsten Morgen.",
+                    detailText = "Die Arbeiter reden viel bei der Arbeit, das bedeutet, sie kennen sich gut und Nachrichten verbreiten sich schnell. Sie werden sicher wissen, wo ich Hannes Mirowitsch finden kann. Bleibt nur zu hoffen, dass sie dieses Wissen auch mit mir teilen.",
+                    hasTrophy = true,
+                    trophyTitle = "Die Suche beginnt!",
+                    trophyDescription = "Helene macht sich auf den Weg, um Hannes zu finden, ihm seinen Arbeitsschein zurückzugeben und vielleicht ganz nebenbei noch seine Unschuld zu beweisen!",
+                    trophyImageName = "trophy_1.jpg"
+                ),
+                Location(
+                    id = "${tourId}_2",
+                    tourId = tourId,
+                    name = "Trinkstation",
+                    order = 2,
+                    latitude = 53.517959,
+                    longitude = 8.123134,
+                    audioFileName = "003Trinkstation_mixdown",
+                    bubbleText = "An der Trinkstation rasten gerade ein paar Männer, die Helene nach Hannes befragen will. Starte das Audio und erfahre, was Helene an der Trinkstation hört.",
+                    detailText = "Die Arbeiter sind also in Schichten organisiert, Arbeitsgruppen, für die es einen Schachtmeister gibt und in der Vertreter gewählt werden können. Trotzdem scheinen sie Schwierigkeiten zu haben, für ihre Rechte einzustehen. Während der Arbeit gibt es immer wieder Buden am Wegesrand, wo sie rasten können und mit Wasser und Viktualien, also Essen, versorgt werden. Aber sobald die Arbeit beendet ist, haben sie Versorgungsprobleme.",
+                    hasTrophy = false,
+                    trophyTitle = null,
+                    trophyDescription = null,
+                    trophyImageName = null
+                ),
+                Location(
+                    id = "${tourId}_3",
+                    tourId = tourId,
+                    name = "Brunnen",
+                    order = 3,
+                    latitude = 53.518341,
+                    longitude = 8.123719,
+                    audioFileName = "004Brunnenbohrung_mixdown",
+                    bubbleText = "Ganz in der Nähe finden gerade Brunnenbohrungen statt. Dort steht ein Beamter der Hafenbaukommission, den Helene befragt.",
+                    detailText = "Ich habe bereits gestern auf dem Fest gehört, dass der Umzug nach Wilhelmshaven für viele Beamte einen sozialen Abstieg bedeutet. Für mich und meine Familie ist es dagegen eher eine neue Chance. Mein Vater ist nämlich Zimmermann und hat sein Geschäft in Kiel bei einem Brand verloren. Hier erhofft er sich weniger Konkurrenz und viel Arbeit, nur seine Zulassung hier arbeiten zu dürfen, hat er noch nicht.",
+                    hasTrophy = false,
+                    trophyTitle = null,
+                    trophyDescription = null,
+                    trophyImageName = null
+                ),
+                Location(
+                    id = "${tourId}_4",
+                    tourId = tourId,
+                    name = "Beamte",
+                    order = 4,
+                    latitude = 53.517113,
+                    longitude = 8.123521,
+                    audioFileName = "005Beamte_mixdown",
+                    bubbleText = "Am Wegesrand stehen zwei Beamte der Hafenbaukommission und beaufsichtigen die Arbeiten. Helene fragt sie, nach den 67ern, von denen die Arbeiter sprachen, und warum man Arbeiter entlassen hat, um diese unterzubringen.",
+                    detailText = "Die Arbeiter bestehlen sich also auch oft gegenseitig? Ich sollte also auch nach Feindseligkeiten untereinander Ausschau halten. Am besten, ich befrage weitere Arbeiter und schaue mal, ob ich diesen Dr. Wenzel finde.",
+                    hasTrophy = false,
+                    trophyTitle = null,
+                    trophyDescription = null,
+                    trophyImageName = null
+                ),
+                Location(
+                    id = "${tourId}_5",
+                    tourId = tourId,
+                    name = "Viktualienbude",
+                    order = 5,
+                    latitude = 53.516653,
+                    longitude = 8.126448,
+                    audioFileName = "006Viktualienbude_mixdown",
+                    bubbleText = "Zum Rasten gibt es ebenfalls kleine Buden am Straßenrand, an denen sie etwas zu Essen bekommen. Helene befragt die Arbeiter, die gerade dort rasten.",
+                    detailText = "Es wird wohl höchste Zeit, dass ich mit dem Schachtmeister der beiden rede. Hoffentlich will er auch mit mir reden. Der scheint gerne auch mal ein krummes Ding zu drehen. Aber wie kann ich nur herausbekommen, woher diese Feindseligkeit unter den Arbeitern kommt? Dr. Wenzel muss doch hier irgendwo unterwegs sein!",
+                    hasTrophy = true,
+                    trophyTitle = "Helene kommt ihrem Ziel langsam näher!",
+                    trophyDescription = "Nun kennt sie schon Hannes' Freund Otto Schepker, doch ein sonderlich gutes Licht werfen ihre Ermittlungen nicht auf die beiden Arbeiter…",
+                    trophyImageName = "trophy_2.jpg"
+                ),
+                // Adding remaining locations...
+                Location(
+                    id = "${tourId}_6",
+                    tourId = tourId,
+                    name = "Sandsturm",
+                    order = 6,
+                    latitude = 53.516544,
+                    longitude = 8.129539,
+                    audioFileName = "007Sandsturm_mixdown",
+                    bubbleText = "Helene läuft weiter die Straße entlang, als ein älterer Herr ihr mit winkenden Armen entgegenkommt.",
+                    detailText = "Ein Glück, dass ich Dr. Wenzel begegnet bin. Nicht nur, dass er mich vor dem Sandsturm bewahrt hat, er scheint die Arbeiter wirklich sehr gut zu kennen. Aber wenn wir jetzt gemeinsam zur Polizei gehen, dann werde ich keine Chance haben weiter selbst nachzuforschen. Außerdem wollte ich Hannes seinen Arbeitsschein doch persönlich zurückgeben. Ich muss versuchen, den Doktor abzulenken. Vielleicht, wenn wir noch einmal ein paar Arbeiter ansprechen, die ihn in ein Gespräch verwickeln.",
+                    hasTrophy = false,
+                    trophyTitle = null,
+                    trophyDescription = null,
+                    trophyImageName = null
+                ),
+                Location(
+                    id = "${tourId}_7",
+                    tourId = tourId,
+                    name = "Arbeiter",
+                    order = 7,
+                    latitude = 53.517394,
+                    longitude = 8.131053,
+                    audioFileName = "008Arbeiter_mixdown",
+                    bubbleText = "Bis zur Wache der Polizeidiener ist es noch ein ganzes Stück, die Straße hinunter und dann links abbiegen in Richtung des Gasthauses \"Zur Erholung\". Helene muss es vorher schaffen, den Doktor abzulenken. Am Straßenrand erspäht sie eine weitere Gruppe rastender Arbeiter.",
+                    detailText = "Ich hoffe, sie halten dieses Tempo nicht, bis sie hinten am Wachgebäude ankommen. Ich werde jedenfalls nicht von den Ermittlungen ablassen. Sie verfolgen gerade meine Spur, da können sie mich nicht einfach fortschicken. Dass der Meister nicht auf meine Frage nach dem asiatischen Stein eingegangen ist, zeigt zumindest schonmal, dass er Otto und Hannes nicht deswegen in das Kommissionsbüro geschickt hat. Wenn er sie überhaupt geschickt hat.",
+                    hasTrophy = true,
+                    trophyTitle = "Wie gewonnen so zerronnen!",
+                    trophyDescription = "Endlich konnte Helene den vermeintlichen Übeltäter ausfindig machen: Hannes' und Ottos Schachtmeister. Ihr Hauptverdächtiger wird ihr jedoch sofort von der örtlichen Polizei vor der Nase weggeschnappt!",
+                    trophyImageName = "trophy_3.jpg"
+                ),
+                Location(
+                    id = "${tourId}_8",
+                    tourId = tourId,
+                    name = "Kommandanturbüro",
+                    order = 8,
+                    latitude = 53.516624,
+                    longitude = 8.132760,
+                    audioFileName = "009Kommandanturbüro_mixdown",
+                    bubbleText = "Die Polizeidiener bringen den Verhafteten nicht den langen Weg bis zur Wache, sondern nehmen ihn mit zum Kommandanturbüro der Marine, um ihn schnellstmöglich verhören zu können.",
+                    detailText = "Die beiden Polizeidiener haben also in den Bauernhäusern keine weiteren Spuren der Flüchtigen gefunden. Ob der Schachtmeister beteiligt war, werde ich von ihnen auch nicht erfahren. Was kann ich jetzt also noch tun? Wenn ich Otto und Hannes schon nicht finden kann, dann sollte ich wenigstens herausfinden, warum sie es getan haben! Da fällt mir nur noch der Offizier ein, den der Beamte am Brunnen erwähnte. Das Theater, bei dem er arbeiten soll, muss hier ganz in der Nähe sein.",
+                    hasTrophy = false,
+                    trophyTitle = null,
+                    trophyDescription = null,
+                    trophyImageName = null
+                ),
+                Location(
+                    id = "${tourId}_9",
+                    tourId = tourId,
+                    name = "Schule",
+                    order = 9,
+                    latitude = 53.517029,
+                    longitude = 8.136624,
+                    audioFileName = "010Schule_mixdown",
+                    bubbleText = "Helene ist ganz in der Nähe des Theaters, da kommt sie an einer kleinen Baustelle vorbei, auf der ein paar Männer an einer Holzkonstruktion arbeiten. Sie spricht einen von ihnen an, um nach dem Weg zu fragen.",
+                    detailText = "Zum Glück habe ich schonmal einen Bericht über diese Ostasienexpedition gelesen, die in den letzten Jahren von Preußen durchgeführt wurde. Genau bei dieser Gelegenheit müsste der Offizier von Hofen in Asien gewesen sein. Wenn ich mich nicht ganz schlecht anstelle, wird er mich auch nicht um den Finger wickeln, wie der Pfarrer sagte.",
+                    hasTrophy = false,
+                    trophyTitle = null,
+                    trophyDescription = null,
+                    trophyImageName = null
+                ),
+                Location(
+                    id = "${tourId}_10",
+                    tourId = tourId,
+                    name = "Theater",
+                    order = 10,
+                    latitude = 53.515917,
+                    longitude = 8.136823,
+                    audioFileName = "011Theater_mixdown",
+                    bubbleText = "Wie der Pfarrer sagte, befindet sich neben dem Gasthaus Berliner Hof ein großes Zelt. Die Gaststätte ist noch geschlossen und das Zelt sieht verlassen aus. Aber dann tritt ein älterer Herr aus dessen Eingang.",
+                    detailText = "Das ist er! Ich habe Otto gefunden. Er wird mich sicher zu Hannes bringen können. Aber wir sollten nicht hier beim Theaterzelt sprechen. Ich will nicht, dass Heinrich von Hofen Otto etwas erzählt, das er nicht hören sollte.",
+                    hasTrophy = true,
+                    trophyTitle = "Auf der Zielgeraden!",
+                    trophyDescription = "Auf eigene Faust konnte Helene endlich Otto Schepker persönlich ausfindig machen, jetzt ist es nicht mehr weit bis zum Treffen mit Hannes!",
+                    trophyImageName = "trophy_4.jpg"
+                ),
+                Location(
+                    id = "${tourId}_11",
+                    tourId = tourId,
+                    name = "Otto",
+                    order = 11,
+                    latitude = 53.516012,
+                    longitude = 8.134869,
+                    audioFileName = "012Otto_mixdown",
+                    bubbleText = "Helene bittet Otto mit ihr außer Hörweite von Heinrich von Hofen ein Stück die Straße hinunter zu gehen, um sich dort mit ihm in Ruhe unterhalten zu können.",
+                    detailText = "Der arme Otto. Ich werde ihm besser noch nicht sagen, dass der Offizier von Hofen sich das meiste nur ausgedacht hat. Otto scheint so aufgeregt und voller Hoffnung zu sein, gar nicht wie in den Geschichten, die mir die anderen Arbeiter über ihn erzählt haben.",
+                    hasTrophy = false,
+                    trophyTitle = null,
+                    trophyDescription = null,
+                    trophyImageName = null
+                ),
+                Location(
+                    id = "${tourId}_12",
+                    tourId = tourId,
+                    name = "Hannes",
+                    order = 12,
+                    latitude = 53.514189,
+                    longitude = 8.135315,
+                    audioFileName = "015_013-014_Hannes_Nachwort_mixdown",
+                    bubbleText = "Als Otto ihm auf die Schulter klopft, dreht er sich mit abwesendem Blick zu ihnen um.",
+                    detailText = "Ich bin ja heute schon so einiges genannt worden, aber verehrte Dame ist mir neu!",
+                    hasTrophy = true,
+                    trophyTitle = "Endlich!",
+                    trophyDescription = "Am Ufer des Jadebusens trifft Helene endlich auf Hannes, um ihm seinen Arbeitsschein zurückzugeben und um ihm vielleicht ganz nebenbei zur Flucht zu verhelfen!",
+                    trophyImageName = "trophy_5.jpg"
+                )
+            )
+        }
+    }
+
+}

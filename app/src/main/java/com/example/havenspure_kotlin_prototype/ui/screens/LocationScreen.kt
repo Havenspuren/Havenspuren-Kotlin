@@ -29,7 +29,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.app.ActivityCompat
-import com.example.havenspure_kotlin_prototype.Data.LocationData
 import com.example.havenspure_kotlin_prototype.R
 import com.example.havenspure_kotlin_prototype.Utils.LocationUtils
 import com.example.havenspure_kotlin_prototype.ViewModels.LocationViewModel

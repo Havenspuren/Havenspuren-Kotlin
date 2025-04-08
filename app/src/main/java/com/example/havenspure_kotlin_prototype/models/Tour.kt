@@ -1,6 +1,6 @@
 package com.example.havenspure_kotlin_prototype.models
 
-import com.example.havenspure_kotlin_prototype.Data.LocationData
+import com.example.havenspure_kotlin_prototype.data.LocationData
 import com.example.havenspure_kotlin_prototype.R
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize

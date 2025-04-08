@@ -5,12 +5,11 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
-import android.location.Address
 import android.location.Geocoder
 import android.os.Build
 import android.os.Looper
 import androidx.core.content.ContextCompat
-import com.example.havenspure_kotlin_prototype.Data.LocationData
+import com.example.havenspure_kotlin_prototype.data.LocationData
 import com.example.havenspure_kotlin_prototype.ViewModels.LocationViewModel
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
@@ -18,7 +17,6 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
-import com.google.android.gms.maps.model.LatLng
 import java.util.Locale
 
 class LocationUtils(val context: Context) {

@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.example.havenspure_kotlin_prototype.Data.LocationData
+import com.example.havenspure_kotlin_prototype.data.LocationData
 import com.example.havenspure_kotlin_prototype.Graph.RoutingGraph
 import com.example.havenspure_kotlin_prototype.Map.Routing.MarkerCreationHelpers
 import com.example.havenspure_kotlin_prototype.Map.Routing.RoutingHelpers
@@ -35,8 +35,6 @@ import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
 import java.io.File
-import kotlin.math.max
-import kotlin.math.min
 
 /**
  * Optimized DirectionMapComponent with faster loading and better performance

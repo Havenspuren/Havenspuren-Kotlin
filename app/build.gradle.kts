@@ -1,8 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
-    id ("kotlin-parcelize")
+    id("kotlin-parcelize")
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -30,21 +30,20 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = "11"
+        jvmTarget = "17"
     }
     buildFeatures {
         compose = true
     }
-    buildFeatures {
-        compose = true
-    }
+
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.1"
+        kotlinCompilerExtensionVersion = "1.5.0" // For Kotlin 1.9.0
     }
+
     packaging {
         resources {
             //excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -100,15 +99,15 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.11.0")
 
     // For JSON serialization
-    implementation ("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.1")
-
+    implementation ("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
     // Add GraphHopper Core
     //implementation ("com.graphhopper:graphhopper-core:1.0")
     // GraphHopper dependencies
     //implementation("com.graphhopper:graphhopper-core:6.2")
     //implementation("com.graphhopper:graphhopper-api:6.2")
     //implementation("com.graphhopper:graphhopper-web-api:6.2")
-    implementation("com.graphhopper:graphhopper-core:2.4")
+    //implementation("com.graphhopper:graphhopper-core:2.4")
+
     implementation("com.graphhopper:graphhopper-reader-osm:2.4")
     implementation(libs.androidx.preference.ktx)
     implementation(libs.screenshot.validation.junit.engine)
@@ -124,7 +123,20 @@ dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
 
 
+// Room Database
+    implementation("androidx.room:room-runtime:2.5.2")
+    implementation("androidx.room:room-ktx:2.5.2")
+    ksp("androidx.room:room-compiler:2.5.2") // If using KSP
+// OR kapt("androidx.room:room-compiler:2.5.2") // If using KAPT
 
+// Kotlin Coroutines (may already be included through other dependencies)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+// Media Player - for audio playback
+    implementation("androidx.media:media:1.6.0")
+
+// Lifecycle components
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.6.2")
 
     // Testing
     testImplementation(libs.junit)
@@ -134,4 +146,13 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+
+
+}
+configurations.all {
+    resolutionStrategy.force(
+        "org.jetbrains.kotlin:kotlin-stdlib:1.9.21",
+        "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.21",
+        "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.21"
+    )
 }

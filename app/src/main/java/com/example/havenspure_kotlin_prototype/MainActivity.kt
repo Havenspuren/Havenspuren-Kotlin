@@ -60,7 +60,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
 import com.example.havenspure_kotlin_prototype.ViewModels.LocationViewModel
-import com.example.havenspure_kotlin_prototype.graph.Graph
+import com.example.havenspure_kotlin_prototype.di.Graph
 import com.example.havenspure_kotlin_prototype.navigation.AppNavHost
 import com.example.havenspure_kotlin_prototype.ui.theme.WilhelmshavenTheme
 import kotlinx.coroutines.launch
@@ -71,11 +71,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Initialize the Graph before setting up UI
+        Graph.initialize(applicationContext)
 
-        // Initialize Graph services
-        lifecycleScope.launch {
-            Graph.provide(applicationContext)
-        }
+        // Get view models from the Graph
+        val toursViewModel = Graph.getInstance().toursViewModel
+
 
 
         setContent {
@@ -87,7 +88,8 @@ class MainActivity : ComponentActivity() {
                     // Set up the navigation host with the controller
                     AppNavHost(
                         navController = navController,
-                        context = this
+                        context = this ,
+                        toursViewModel = toursViewModel
                     )
                 }
             }
@@ -96,9 +98,5 @@ class MainActivity : ComponentActivity() {
 
 
 
-    override fun onDestroy() {
-        super.onDestroy()
-        // Cleanup Graph resources
-        Graph.cleanup()
-    }
+
 }

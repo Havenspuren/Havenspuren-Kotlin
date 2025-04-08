@@ -3,7 +3,7 @@ package com.example.havenspure_kotlin_prototype.Map.Routing
 import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
-import com.example.havenspure_kotlin_prototype.Data.LocationData
+import com.example.havenspure_kotlin_prototype.data.LocationData
 import com.example.havenspure_kotlin_prototype.Graph.RoutingGraph
 import org.osmdroid.util.GeoPoint
 import kotlin.math.*

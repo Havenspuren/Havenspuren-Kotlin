@@ -7,9 +7,11 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -19,7 +21,10 @@ import androidx.navigation.navArgument
 import com.example.havenspure_kotlin_prototype.AppDrawer
 import com.example.havenspure_kotlin_prototype.OSRM.viewmodel.MapViewModel
 import com.example.havenspure_kotlin_prototype.Utils.LocationUtils
+import com.example.havenspure_kotlin_prototype.ViewModels.LocationTourViewModel
 import com.example.havenspure_kotlin_prototype.ViewModels.LocationViewModel
+import com.example.havenspure_kotlin_prototype.ViewModels.ToursViewModel
+import com.example.havenspure_kotlin_prototype.di.Graph
 import com.example.havenspure_kotlin_prototype.models.Tour
 import com.example.havenspure_kotlin_prototype.ui.screens.LocationPermissionScreen
 import com.example.havenspure_kotlin_prototype.ui.screens.MainScreen
@@ -33,10 +38,15 @@ import com.example.havenspure_kotlin_prototype.ui.screens.ToursMainScreen
 import kotlinx.coroutines.launch
 
 @Composable
-fun AppNavHost(navController: NavHostController, context: Context) {
+fun AppNavHost(navController: NavHostController, context: Context , toursViewModel: ToursViewModel) {
 
     // Initialize the LocationViewModel
     val locationViewModel: LocationViewModel = viewModel()
+
+    // Get viewModels from dependency injection
+   // val toursViewModel = Graph.getInstance().toursViewModel
+   // val locationTourViewModel: LocationTourViewModel = Graph.getInstance().locationTourViewModel
+
 
     // Drawer state for the navigation drawer
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -109,11 +119,7 @@ fun AppNavHost(navController: NavHostController, context: Context) {
                 }
             ) {
                 MainScreen(
-                    onOpenDrawer = {
-                        scope.launch {
-                            drawerState.open()
-                        }
-                    },
+
                     // Pass the LocationViewModel to MainScreen if needed
                     locationViewModel = locationViewModel ,
                     onEntedeckenClick = {navController.navigate(Screen.ToursMain.route)}
@@ -121,7 +127,12 @@ fun AppNavHost(navController: NavHostController, context: Context) {
 
             }
         }
+
+
+        // Tours main screen showing available tours
         composable(Screen.ToursMain.route) {
+            val uiState by toursViewModel.uiState.collectAsStateWithLifecycle()
+
             ModalNavigationDrawer(
                 drawerState = drawerState,
                 drawerContent = {
@@ -132,14 +143,10 @@ fun AppNavHost(navController: NavHostController, context: Context) {
                             }
                         },
                         onNavigateToScreen = { route ->
-                            // Navigate to selected screen
                             navController.navigate(route) {
-                                // Avoid multiple copies of the same destination
                                 launchSingleTop = true
-                                // Restore state when navigating back
                                 restoreState = true
                             }
-                            // Close drawer after navigation
                             scope.launch {
                                 drawerState.close()
                             }
@@ -148,16 +155,15 @@ fun AppNavHost(navController: NavHostController, context: Context) {
                 }
             ) {
                 ToursMainScreen(
+                    uiState = uiState,
                     onOpenDrawer = {
                         scope.launch {
                             drawerState.open()
                         }
                     },
-                    onTourSelected = { tour ->
-                        // Store the complete tour object in savedStateHandle
-                        navController.currentBackStackEntry?.savedStateHandle?.set("tour", tour)
-                        // Navigate to the detail screen without any parameters
-                        navController.navigate(Screen.TourDetail.route)
+                    onTourSelected = { tourId ->
+                        // Navigate using the tour ID instead of the full object
+                        navController.navigate("${Screen.TourDetail.route}/$tourId")
                     },
                     onTourInfo = { /* Your implementation */ },
                 )

@@ -1,12 +1,12 @@
 package com.example.havenspure_kotlin_prototype.di
 
 import android.annotation.SuppressLint
-import android.app.Application
 import android.content.Context
+import android.util.Log
 import com.example.havenspure_kotlin_prototype.Utils.AudioUtils
 import com.example.havenspure_kotlin_prototype.ViewModels.LocationTourViewModel
 import com.example.havenspure_kotlin_prototype.ViewModels.ToursViewModel
-import com.havenspure.data.local.HavenspurenDatabase
+import com.example.havenspure_kotlin_prototype.data.local.AppDatabase
 import com.havenspure.data.repository.DataInitRepository
 import com.havenspure.data.repository.TourRepository
 import com.havenspure.data.repository.UserProgressRepository
@@ -14,18 +14,17 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import timber.log.Timber
 
-/**
- * Dependency injection graph for the application
- */
 class Graph private constructor(private val context: Context) {
 
-    // Application scope for long-running operations
+    // Application scope
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     // Database instance
     private val database by lazy {
-        HavenspurenDatabase.getDatabase(context)
+        AppDatabase.getDatabase(context)
     }
 
     // DAOs
@@ -39,15 +38,15 @@ class Graph private constructor(private val context: Context) {
     private val audioUtils by lazy { AudioUtils(context) }
 
     // Repositories
-    private val tourRepository by lazy {
+    val tourRepository by lazy {
         TourRepository(tourDao, locationDao)
     }
 
-    private val userProgressRepository by lazy {
+    val userProgressRepository by lazy {
         UserProgressRepository(userProgressDao, visitedLocationDao, locationDao, trophyDao)
     }
 
-    private val dataInitRepository by lazy {
+    val dataInitRepository by lazy {
         DataInitRepository(tourRepository, trophyDao)
     }
 
@@ -60,33 +59,38 @@ class Graph private constructor(private val context: Context) {
         LocationTourViewModel(tourRepository, userProgressRepository, audioUtils)
     }
 
-    // Initialize default data on first launch
+    // Initialize default data
     init {
         applicationScope.launch {
             initializeDefaultData()
         }
     }
 
+    // In Graph
+    fun isDataInitialized(): Boolean {
+        // Use a simpler non-blocking check or a SharedPreference flag
+        val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        return prefs.getBoolean("data_initialized", false)
+    }
+
+    // Mark data as initialized after successful initialization
+    private suspend fun markDataInitialized() {
+        context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("data_initialized", true)
+            .apply()
+    }
+
     private suspend fun initializeDefaultData() {
         try {
-            // Always initialize default data first to ensure default tour exists
             dataInitRepository.initializeDefaultData()
-
-            // After initializing default data, you can load other tours if needed
-            // This ensures at least one tour will always be available
-            tourRepository.getToursWithProgress().collect { tours ->
-                // Additional operations with tours if needed
-                // For example, you could log or process the loaded tours
-            }
         } catch (e: Exception) {
-            // Log the error
             e.printStackTrace()
-            // If there's an error, try to initialize default data again
+            // Retry once if initialization fails
             try {
                 dataInitRepository.initializeDefaultData()
             } catch (e: Exception) {
                 e.printStackTrace()
-                // Handle the case where default data initialization fails completely
             }
         }
     }
@@ -98,29 +102,16 @@ class Graph private constructor(private val context: Context) {
 
         fun initialize(context: Context) {
             if (instance == null) {
-                instance = Graph(context)
+                synchronized(this) {
+                    if (instance == null) {
+                        instance = Graph(context)
+                    }
+                }
             }
         }
 
         fun getInstance(): Graph {
             return instance ?: throw IllegalStateException("Graph must be initialized first")
         }
-    }
-}
-
-// Extension function to access context from Application class
-fun Context.applicationGraph(): Graph = when (this) {
-    is HavenspureApplication -> this.graph
-    else -> this.applicationContext.applicationGraph()
-}
-
-// Application class that initializes the graph
-class HavenspureApplication : Application() {
-    lateinit var graph: Graph
-
-    override fun onCreate() {
-        super.onCreate()
-        Graph.initialize(this)
-        graph = Graph.getInstance()
     }
 }

@@ -33,7 +33,7 @@ import com.example.havenspure_kotlin_prototype.ui.screens.RichtungenZeigenScreen
 import com.example.havenspure_kotlin_prototype.ui.screens.SplashScreen
 import com.example.havenspure_kotlin_prototype.ui.screens.TourDetailScreen
 import com.example.havenspure_kotlin_prototype.ui.screens.TourHorenScreen
-import com.example.havenspure_kotlin_prototype.ui.screens.TourLesenScreen
+import com.example.havenspure_kotlin_prototype.ui.screens.TourOverviewScreen
 import com.example.havenspure_kotlin_prototype.ui.screens.ToursMainScreen
 import kotlinx.coroutines.launch
 
@@ -165,34 +165,36 @@ fun AppNavHost(navController: NavHostController, context: Context , toursViewMod
                         // Navigate using the tour ID instead of the full object
                         navController.navigate("${Screen.TourDetail.route}/$tourId")
                     },
-                    onTourInfo = { /* Your implementation */ },
+                    toursViewModel = toursViewModel  // Pass the ViewModel directly
                 )
             }
         }
 
-        // Tour Detail Screen
-        composable(route = Screen.TourDetail.route) {
-            // Get the complete tour object from savedStateHandle
-            val tour = navController.previousBackStackEntry?.savedStateHandle?.get<Tour>("tour")
-                ?: Tour(id = "", title = "Unknown Tour", progress = 0)
+        // Tour Detail Screen - now using ID-based navigation
+        composable(
+            route = "${Screen.TourDetail.route}/{tourId}",
+            arguments = listOf(navArgument("tourId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            // Extract tour ID from navigation arguments
+            val tourId = backStackEntry.arguments?.getString("tourId") ?: ""
 
             TourDetailScreen(
-                tour = tour,
+                tourId = tourId,
+                toursViewModel = toursViewModel,
+                locationViewModel = locationViewModel,
                 onBackClick = { navController.popBackStack() },
-                onLesenClick = {
-                    // Store the tour object for the Lesen screen
-                    navController.currentBackStackEntry?.savedStateHandle?.set("tour", tour)
-                    // Navigate to the Lesen screen
-                    navController.navigate(Screen.TourLesen.route)
+                onOverviewClick = { id ->
+                    navController.currentBackStackEntry?.savedStateHandle?.set("tourId", id)
+                    navController.navigate(Screen.TourOverviewScreen.route)
                 },
-                onHorenClick = { // Store the tour object for the Hören screen
-                    navController.currentBackStackEntry?.savedStateHandle?.set("tour", tour)
-                    // Navigate to the Hören screen
-                    navController.navigate(Screen.TourHoren.route)
-                 },
-                onGPSClick = { navController.currentBackStackEntry?.savedStateHandle?.set("tour", tour)
-                    navController.navigate(Screen.NavigationScreen.route) },
-                locationviewmodel = locationViewModel
+                onHorenClick = { id ->
+                    // Navigate to Hören screen with the ID
+                    navController.navigate("${Screen.TourHoren.route}/$id")
+                },
+                onGPSClick = { id ->
+                    // Navigate to Navigation screen with the ID
+                    navController.navigate("${Screen.NavigationScreen.route}/$id")
+                }
             )
         }
         composable(route = Screen.RichtungenZeigen.route) {
@@ -233,16 +235,17 @@ fun AppNavHost(navController: NavHostController, context: Context , toursViewMod
 
 
         // Tour Lesen Screen - Using the same pattern of passing the Tour object
-        composable(route = Screen.TourLesen.route) {
-            // Get the tour object from savedStateHandle
-            val tour = navController.previousBackStackEntry?.savedStateHandle?.get<Tour>("tour")
-                ?: Tour(id = "", title = "Unknown Tour", progress = 0)
+        composable(route = Screen.TourOverviewScreen.route) {
+            // Get the tourId from savedStateHandle
+            val tourId = navController.previousBackStackEntry?.savedStateHandle?.get<String>("tourId") ?: ""
 
-            TourLesenScreen(
-                tour = tour,
+            TourOverviewScreen(
+                tourId = tourId,
+                toursViewModel = toursViewModel,
                 onBackClick = { navController.popBackStack() }
             )
         }
+
         composable(route = Screen.TourHoren.route) {
             val tour = navController.previousBackStackEntry?.savedStateHandle?.get<Tour>("tour")
                 ?: Tour(id = "", title = "Unknown Tour", progress = 0)

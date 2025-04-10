@@ -138,6 +138,10 @@ dependencies {
 // Lifecycle components
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.6.2")
 
+
+    // Add Timber for logging
+    implementation ("com.jakewharton.timber:timber:5.0.1")  // Use the latest version
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

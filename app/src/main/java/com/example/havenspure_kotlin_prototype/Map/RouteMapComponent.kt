@@ -54,10 +54,10 @@ import kotlin.math.*
  * This component prioritizes app stability over feature richness to prevent ANRs.
  *
  * @param userLocation The user's current location (may be null)
- * @param destinationLocation The destination location
+ * @param destinationLocations List of destination locations to plot on the map
  */
 @Composable
-fun StableRouteMapComponent(userLocation: LocationData?, destinationLocation: LocationData) {
+fun StableRouteMapComponent(userLocation: LocationData?, destinationLocations: List<LocationData>) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -82,7 +82,9 @@ fun StableRouteMapComponent(userLocation: LocationData?, destinationLocation: Lo
     val destinationColor = Color.Red.toArgb() // Red destination marker
 
     // Create points
-    val destinationPoint = GeoPoint(destinationLocation.latitude, destinationLocation.longitude)
+    val destinationPoints = destinationLocations.map {
+        GeoPoint(it.latitude, it.longitude)
+    }
     val userPoint = userLocation?.let { GeoPoint(it.latitude, it.longitude) }
 
     // Flag to prevent concurrent map operations
@@ -115,7 +117,7 @@ fun StableRouteMapComponent(userLocation: LocationData?, destinationLocation: Lo
 
     // Initialize map only once
     LaunchedEffect(Unit) {
-        if (!mapInitialized.value) {
+        if (!mapInitialized.value && destinationPoints.isNotEmpty()) {
             try {
                 // Basic setup on main thread
                 mapView.setTileSource(TileSourceFactory.MAPNIK)
@@ -124,28 +126,37 @@ fun StableRouteMapComponent(userLocation: LocationData?, destinationLocation: Lo
                 val initialZoom = 15.0
                 mapView.controller.setZoom(initialZoom)
 
-                val initialCenter = userPoint ?: destinationPoint
+                // Set initial center to first destination if no user location or user location
+                val initialCenter = userPoint ?: destinationPoints.first()
                 mapView.controller.setCenter(initialCenter)
 
                 // Only do the rest after a delay
                 Handler(Looper.getMainLooper()).postDelayed({
                     try {
-                        // If we have both points, calculate a bounding box
-                        if (userPoint != null) {
-                            // Simple bounding box calculation
-                            val north = max(userPoint.latitude, destinationPoint.latitude) + 0.01
-                            val south = min(userPoint.latitude, destinationPoint.latitude) - 0.01
-                            val east = max(userPoint.longitude, destinationPoint.longitude) + 0.01
-                            val west = min(userPoint.longitude, destinationPoint.longitude) - 0.01
+                        // Calculate a bounding box that contains all points
+                        if (destinationPoints.isNotEmpty()) {
+                            val points = destinationPoints.toMutableList()
+                            if (userPoint != null) points.add(userPoint)
 
-                            val box = BoundingBox(north, east, south, west)
-                            mapView.zoomToBoundingBox(box, true, 100)
+                            if (points.size > 1) {
+                                // Calculate bounding box
+                                val latitudes = points.map { it.latitude }
+                                val longitudes = points.map { it.longitude }
+
+                                val north = latitudes.maxOrNull()!! + 0.01
+                                val south = latitudes.minOrNull()!! - 0.01
+                                val east = longitudes.maxOrNull()!! + 0.01
+                                val west = longitudes.minOrNull()!! - 0.01
+
+                                val box = BoundingBox(north, east, south, west)
+                                mapView.zoomToBoundingBox(box, true, 100)
+                            }
                         }
 
-                        // Add markers and line after a delay
+                        // Add markers and route after a delay
                         Handler(Looper.getMainLooper()).postDelayed({
                             try {
-                                addMarkersAndLine(mapView, userPoint, destinationPoint, routeColor, destinationColor, context)
+                                addMarkersAndRoute(mapView, userPoint, destinationPoints, routeColor, destinationColor, context)
                                 mapInitialized.value = true
                             } catch (e: Exception) {
                                 Log.e("StableMap", "Error adding markers: ${e.message}")
@@ -159,11 +170,45 @@ fun StableRouteMapComponent(userLocation: LocationData?, destinationLocation: Lo
                 Log.e("StableMap", "Error initializing map: ${e.message}")
             }
         }
+
+        // Add zoom listener to update marker positions when zoom changes
+        // Add zoom listener to update marker positions when zoom changes
+        var lastZoomLevel = mapView.zoomLevelDouble
+        // Add zoom listener to update marker positions when zoom changes
+        mapView.addOnFirstLayoutListener { _, _, _, _, _ ->
+            // Use the proper method to add a MapListener
+            mapView.addMapListener(object : org.osmdroid.events.MapListener {
+                override fun onScroll(event: org.osmdroid.events.ScrollEvent?): Boolean {
+                    return true
+                }
+
+                override fun onZoom(event: org.osmdroid.events.ZoomEvent?): Boolean {
+                    // Only update if zoom level has actually changed
+                    if (lastZoomLevel != mapView.zoomLevelDouble && !mapUpdateInProgress.value) {
+                        lastZoomLevel = mapView.zoomLevelDouble
+                        mapUpdateInProgress.value = true
+
+                        // Refresh markers on zoom change to update offsets
+                        Handler(Looper.getMainLooper()).post {
+                            try {
+                                mapView.overlays.clear()
+                                addMarkersAndRoute(mapView, userPoint, destinationPoints, routeColor, destinationColor, context)
+                            } catch (e: Exception) {
+                                Log.e("StableMap", "Error updating markers on zoom: ${e.message}")
+                            } finally {
+                                mapUpdateInProgress.value = false
+                            }
+                        }
+                    }
+                    return true
+                }
+            })
+        }
     }
 
-    // Update user location marker only, and only if user position changes significantly
+    // Update user location marker and route when user position changes significantly
     LaunchedEffect(userLocation) {
-        if (mapInitialized.value && userLocation != null && !mapUpdateInProgress.value) {
+        if (mapInitialized.value && userLocation != null && !mapUpdateInProgress.value && destinationPoints.isNotEmpty()) {
             mapUpdateInProgress.value = true
 
             // New user point
@@ -174,7 +219,7 @@ fun StableRouteMapComponent(userLocation: LocationData?, destinationLocation: Lo
                 mapView.controller.animateTo(newUserPoint)
             }
 
-            // Update markers on background thread
+            // Update markers and route on background thread
             backgroundHandler.post {
                 try {
                     Handler(Looper.getMainLooper()).post {
@@ -182,7 +227,7 @@ fun StableRouteMapComponent(userLocation: LocationData?, destinationLocation: Lo
                             // Very simple update - just recreate everything
                             // This is less efficient but much more stable
                             mapView.overlays.clear()
-                            addMarkersAndLine(mapView, newUserPoint, destinationPoint, routeColor, destinationColor, context)
+                            addMarkersAndRoute(mapView, newUserPoint, destinationPoints, routeColor, destinationColor, context)
                         } catch (e: Exception) {
                             Log.e("StableMap", "Error updating markers: ${e.message}")
                         } finally {
@@ -281,6 +326,52 @@ fun StableRouteMapComponent(userLocation: LocationData?, destinationLocation: Lo
 }
 
 /**
+ * Calculate offset for markers based on zoom level and proximity
+ */
+private fun calculateMarkerOffset(
+    mapView: MapView,
+    markerIndex: Int,
+    totalMarkers: Int,
+    point: GeoPoint,
+    otherPoints: List<GeoPoint>
+): Pair<Double, Double> {
+    // Get current zoom level
+    val zoomLevel = mapView.zoomLevelDouble
+
+    // No offset when fully zoomed in
+    if (zoomLevel >= 16.0) return Pair(0.0, 0.0)
+
+    // DIRECT APPROACH: Use a fixed vertical offset based on index and zoom
+    // This creates a clear vertical stacking effect regardless of proximity
+    val verticalOffsetBase = 0.0045  // This is a VERY large value - adjust as needed
+
+    // Apply stronger offset at lower zoom levels
+    val zoomMultiplier = (16.0 - zoomLevel) / 8.0
+
+    // Calculate latitude offset - directly based on index (higher index = higher up)
+    val latOffset = verticalOffsetBase * (markerIndex + 1) * zoomMultiplier
+
+    // Small longitude offset to create an arc
+    val lngOffset = 0.002 * (markerIndex - (totalMarkers / 2.0)) / totalMarkers
+
+    return Pair(latOffset, lngOffset)
+}
+
+/**
+ * Calculate distance between two points in kilometers
+ */
+private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val r = 6371 // Earth radius in kilometers
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2)
+    val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return r * c
+}
+
+/**
  * Create a custom red pin marker for destination
  */
 private fun createRedPinMarker(context: Context): BitmapDrawable {
@@ -349,37 +440,113 @@ private fun createGlowingLocationMarker(context: Context, color: Int): BitmapDra
 }
 
 /**
- * Simplified function to add markers and connecting line.
- * All objects are created fresh each time for stability.
+ * Creates numbered marker for tour stops
  */
-private fun addMarkersAndLine(
+private fun createNumberedMarker(context: Context, number: Int): BitmapDrawable {
+    val size = 48 // Size of marker in pixels
+    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+
+    // Background circle
+    val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    bgPaint.color = AndroidColor.RED
+    bgPaint.style = Paint.Style.FILL
+    canvas.drawCircle(size/2f, size/2f, size/2f - 4, bgPaint)
+
+    // Number text
+    val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    textPaint.color = AndroidColor.WHITE
+    textPaint.textSize = size * 0.5f
+    textPaint.textAlign = Paint.Align.CENTER
+    textPaint.isFakeBoldText = true
+
+    // Center text position
+    val xPos = size / 2f
+    val yPos = (size / 2f) - ((textPaint.descent() + textPaint.ascent()) / 2f)
+
+    // Draw the number
+    canvas.drawText(number.toString(), xPos, yPos, textPaint)
+
+    return BitmapDrawable(context.resources, bitmap)
+}
+
+
+/**
+ * Add markers and route with hairline connector lines.
+ * Uses extremely thin, semi-transparent lines for a subtle but effective visual connection.
+ */
+private fun addMarkersAndRoute(
     mapView: MapView,
     userPoint: GeoPoint?,
-    destinationPoint: GeoPoint,
+    destinationPoints: List<GeoPoint>,
     routeColor: Int,
     destinationColor: Int,
     context: Context
 ) {
-    // Add destination marker with red pin
-    val destMarker = Marker(mapView).apply {
-        position = destinationPoint
-        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+    // Do nothing if no destinations
+    if (destinationPoints.isEmpty()) return
 
-        // Try to use custom red pin marker
-        try {
-            icon = createRedPinMarker(context)
-        } catch (e: Exception) {
-            // Fallback to simple drawable tinted red
-            val drawable = ContextCompat.getDrawable(context, android.R.drawable.ic_dialog_map)?.mutate()
-            drawable?.setTint(AndroidColor.RED)
-            icon = drawable
+    // Sort points by distance from top of screen to bottom
+    // This ensures markers with higher indices appear further up (creating a clear progression)
+    val sortedPoints = destinationPoints.sortedBy { it.latitude }
+
+    // Add markers for each destination with hairline connector lines
+    sortedPoints.forEachIndexed { index, point ->
+        // Calculate offset based on zoom level and proximity to other points
+        val (latOffset, lngOffset) = calculateMarkerOffset(
+            mapView,
+            index,
+            sortedPoints.size,
+            point,
+            sortedPoints.filterIndexed { i, _ -> i != index }
+        )
+
+        // Apply offset to create a new position with projection effect
+        val adjustedPosition = GeoPoint(
+            point.latitude + latOffset,
+            point.longitude + lngOffset
+        )
+
+        // Add a hairline connector line from actual position to offset position
+        // Only add if there's actually an offset
+        if (latOffset != 0.0 || lngOffset != 0.0) {
+            val connectorLine = Polyline(mapView).apply {
+                setPoints(listOf(point, adjustedPosition))
+
+                // Style for connector line - extremely thin, semi-transparent line
+                outlinePaint.color = AndroidColor.parseColor("#40000000") // 25% transparent black
+                outlinePaint.strokeWidth = 1.5f // Very thin line (hairline)
+                outlinePaint.strokeCap = Paint.Cap.ROUND
+                outlinePaint.isAntiAlias = true
+            }
+            mapView.overlays.add(connectorLine)
         }
 
-        title = "Ziel"
-    }
-    mapView.overlays.add(destMarker)
+        // Add the marker at the offset position
+        val marker = Marker(mapView).apply {
+            position = adjustedPosition
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
 
-    // Add user marker and line if we have user location
+            // Try to use custom numbered marker
+            try {
+                // Find the original index to maintain the correct numbering
+                val originalIndex = destinationPoints.indexOf(point)
+                icon = createNumberedMarker(context, originalIndex + 1)
+            } catch (e: Exception) {
+                // Fallback to simple drawable tinted red
+                val drawable = ContextCompat.getDrawable(context, android.R.drawable.ic_dialog_map)?.mutate()
+                drawable?.setTint(AndroidColor.RED)
+                icon = drawable
+            }
+
+            // Find the original index to maintain the correct numbering
+            val originalIndex = destinationPoints.indexOf(point)
+            title = "Stop ${originalIndex + 1}"
+        }
+        mapView.overlays.add(marker)
+    }
+
+    // Add user marker if we have user location
     if (userPoint != null) {
         // Add user marker with glowing blue dot
         val userMarker = Marker(mapView).apply {
@@ -397,12 +564,29 @@ private fun addMarkersAndLine(
             title = "Ihr Standort"
         }
         mapView.overlays.add(userMarker)
+    }
 
-        // Add simple line connecting the points (green route)
+    // For the route line, always use the actual geographic points without offset
+    // Connect from user location to all destinations in the original order
+    if (userPoint != null && destinationPoints.isNotEmpty()) {
+        val routePoints = mutableListOf<GeoPoint>()
+        routePoints.add(userPoint)
+        routePoints.addAll(destinationPoints) // Original points, not offset ones
+
         val line = Polyline(mapView).apply {
-            setPoints(listOf(userPoint, destinationPoint))
+            setPoints(routePoints)
             outlinePaint.color = routeColor
-            outlinePaint.strokeWidth = 7f // Slightly thicker
+            outlinePaint.strokeWidth = 7f
+            outlinePaint.strokeCap = Paint.Cap.ROUND
+            outlinePaint.isAntiAlias = true
+        }
+        mapView.overlays.add(line)
+    } else if (destinationPoints.size > 1) {
+        // If no user location, still connect the destination points
+        val line = Polyline(mapView).apply {
+            setPoints(destinationPoints)
+            outlinePaint.color = routeColor
+            outlinePaint.strokeWidth = 7f
             outlinePaint.strokeCap = Paint.Cap.ROUND
             outlinePaint.isAntiAlias = true
         }
@@ -411,4 +595,23 @@ private fun addMarkersAndLine(
 
     // Trigger a single redraw
     mapView.invalidate()
+}
+
+/**
+ * Creates a small dot marker for showing actual position
+ */
+private fun createSmallDotMarker(context: Context): BitmapDrawable {
+    val size = 12 // Small size in pixels
+    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+
+    // Create a small, semi-transparent black dot
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    paint.color = AndroidColor.parseColor("#80000000") // 50% transparent black
+    paint.style = Paint.Style.FILL
+
+    // Draw a small circle
+    canvas.drawCircle(size/2f, size/2f, size/2f, paint)
+
+    return BitmapDrawable(context.resources, bitmap)
 }

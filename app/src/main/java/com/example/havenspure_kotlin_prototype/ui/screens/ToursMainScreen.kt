@@ -10,7 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -25,7 +25,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.havenspure_kotlin_prototype.R
 import com.example.havenspure_kotlin_prototype.ViewModels.ToursUiState
+import com.example.havenspure_kotlin_prototype.ViewModels.ToursViewModel
+import com.example.havenspure_kotlin_prototype.data.model.TourWithLocations
 import com.example.havenspure_kotlin_prototype.data.model.TourWithProgress
+import com.example.havenspure_kotlin_prototype.ui.components.TourInfoDialog
 import com.example.havenspure_kotlin_prototype.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,8 +37,34 @@ fun ToursMainScreen(
     uiState: ToursUiState,
     onOpenDrawer: () -> Unit,
     onTourSelected: (String) -> Unit,
-    onTourInfo: (String) -> Unit
+    toursViewModel: ToursViewModel // Pass the ViewModel directly
 ) {
+    // Dialog states
+    var showInfoDialog by remember { mutableStateOf(false) }
+    var selectedTourId by remember { mutableStateOf("") }
+
+    // States to hold async loaded data for the dialog
+    var selectedTourWithProgress by remember { mutableStateOf<TourWithProgress?>(null) }
+    var selectedTourWithLocations by remember { mutableStateOf<TourWithLocations?>(null) }
+    var visitedLocationIds by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    // Effect to load data when selectedTourId changes
+    LaunchedEffect(selectedTourId) {
+        if (selectedTourId.isNotEmpty() && showInfoDialog) {
+            // Load data for the dialog
+            toursViewModel.getTourWithProgressAndLocations(selectedTourId) { progress, locations ->
+                selectedTourWithProgress = progress
+                selectedTourWithLocations = locations
+
+                // Here you would also load visited location IDs
+                // For example (you'll need to implement this method):
+                // userProgressRepository.getVisitedLocationIds(selectedTourId) { ids ->
+                //     visitedLocationIds = ids
+                // }
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -110,7 +139,12 @@ fun ToursMainScreen(
                             TourCard(
                                 tourWithProgress = tourWithProgress,
                                 onContinueClick = { onTourSelected(tourWithProgress.tour.id) },
-                                onInfoClick = { onTourInfo(tourWithProgress.tour.id) }
+                                onInfoClick = {
+                                    // Handle info click internally
+                                    selectedTourId = tourWithProgress.tour.id
+                                    selectedTourWithProgress = tourWithProgress // Store immediately available data
+                                    showInfoDialog = true
+                                }
                             )
                         }
 
@@ -118,6 +152,39 @@ fun ToursMainScreen(
                         item {
                             Spacer(modifier = Modifier.height(16.dp))
                         }
+                    }
+
+                    // Display the dialog when showInfoDialog is true and we have necessary data
+                    if (showInfoDialog && selectedTourWithProgress != null && selectedTourWithLocations != null) {
+                        TourInfoDialog(
+                            tourWithProgress = selectedTourWithProgress!!,
+                            tourWithLocations = selectedTourWithLocations!!,
+                            visitedLocationIds = visitedLocationIds,
+                            onDismiss = {
+                                showInfoDialog = false
+                                // Clear data when dialog is closed
+                                selectedTourId = ""
+                                selectedTourWithProgress = null
+                                selectedTourWithLocations = null
+                                visitedLocationIds = emptyList()
+                            }
+                        )
+                    } else if (showInfoDialog) {
+                        // Show loading dialog while data is being fetched
+                        AlertDialog(
+                            onDismissRequest = { showInfoDialog = false },
+                            title = { Text("Laden...") },
+                            text = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    CircularProgressIndicator(color = PrimaryColor)
+                                    Text("Tourdaten werden geladen")
+                                }
+                            },
+                            confirmButton = {}
+                        )
                     }
                 }
 
@@ -139,7 +206,7 @@ fun ToursMainScreen(
                         Spacer(modifier = Modifier.height(16.dp))
 
                         Button(
-                            onClick = { /* Retry loading tours */ },
+                            onClick = { toursViewModel.refreshTours() },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Color.White,
                                 contentColor = TextDark

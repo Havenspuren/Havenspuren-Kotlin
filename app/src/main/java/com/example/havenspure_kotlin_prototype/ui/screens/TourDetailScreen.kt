@@ -35,8 +35,7 @@ fun TourDetailScreen(
     locationViewModel: LocationViewModel,
     onBackClick: () -> Unit,
     onOverviewClick: (String) -> Unit,
-    onHorenClick: (String) -> Unit,
-    onGPSClick: (String) -> Unit
+    onStartClick: (String) -> Unit
 ) {
     val location by locationViewModel.location
 
@@ -149,21 +148,15 @@ fun TourDetailScreen(
                     ) {
                         // Action Cards
                         ActionCard(
-                            title = "Lesen",
+                            title = "Überblick",
                             icon = Icons.Default.MenuBook,
                             onClick = { onOverviewClick(tourId) }
                         )
 
                         ActionCard(
-                            title = "Hören",
-                            icon = Icons.Default.Headphones,
-                            onClick = { onHorenClick(tourId) }
-                        )
-
-                        ActionCard(
-                            title = "Offline Navigation",
+                            title = "Starten die Reise",
                             icon = Icons.Default.LocationOn,
-                            onClick = { onGPSClick(tourId) }
+                            onClick = { onStartClick(tourId) }
                         )
 
                         // Map Component

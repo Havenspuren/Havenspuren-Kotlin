@@ -187,11 +187,7 @@ fun AppNavHost(navController: NavHostController, context: Context , toursViewMod
                     navController.currentBackStackEntry?.savedStateHandle?.set("tourId", id)
                     navController.navigate(Screen.TourOverviewScreen.route)
                 },
-                onHorenClick = { id ->
-                    // Navigate to Hören screen with the ID
-                    navController.navigate("${Screen.TourHoren.route}/$id")
-                },
-                onGPSClick = { id ->
+                onStartClick = { id ->
                     // Navigate to Navigation screen with the ID
                     navController.navigate("${Screen.NavigationScreen.route}/$id")
                 }

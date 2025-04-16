@@ -9,10 +9,12 @@ import com.example.havenspure_kotlin_prototype.data.LocationData
 import com.example.havenspure_kotlin_prototype.data.model.Location
 import com.havenspure.data.repository.TourRepository
 import com.havenspure.data.repository.UserProgressRepository
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 
 class LocationTourViewModel(
@@ -166,6 +168,46 @@ class LocationTourViewModel(
         val results = FloatArray(1)
         android.location.Location.distanceBetween(lat1, lon1, lat2, lon2, results)
         return results[0]
+    }
+
+    // File: LocationTourViewModel.kt
+// These are new methods to be added to your existing LocationTourViewModel
+
+    // NEW METHOD: Get all visited locations for a tour
+    fun getVisitedLocations(tourId: String): Flow<List<String>> = flow {
+        viewModelScope.launch {
+            try {
+                val visitedLocations = userProgressRepository.getVisitedLocationsForTour(tourId)
+                    .map { it.locationId }
+                emit(visitedLocations)
+            } catch (e: Exception) {
+                emit(emptyList<String>())
+            }
+        }
+    }
+
+    // NEW METHOD: Get next location after the given one
+    fun getNextLocation(tourId: String, currentLocationOrder: Int, onResult: (Location?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val nextLocation = tourRepository.getNextLocation(tourId, currentLocationOrder)
+                onResult(nextLocation)
+            } catch (e: Exception) {
+                onResult(null)
+            }
+        }
+    }
+
+    // NEW METHOD: Check if a location is visited
+    fun isLocationVisited(locationId: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val isVisited = userProgressRepository.isLocationVisited(locationId)
+                onResult(isVisited)
+            } catch (e: Exception) {
+                onResult(false)
+            }
+        }
     }
 }
 

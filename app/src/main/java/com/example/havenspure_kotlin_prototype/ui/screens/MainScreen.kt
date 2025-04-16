@@ -312,49 +312,6 @@ fun MainScreen(
                     .clip(RoundedCornerShape(16.dp))
             ) {
                 MapComponent(locationData = location)
-
-                // Target location indicator in the middle of the map
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(Color(0x660096A6), CircleShape)
-                            .padding(4.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color(0x9900BCD4), CircleShape)
-                                .padding(8.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color.White, CircleShape)
-                            )
-                        }
-                    }
-                }
-
-                // Current location button at bottom right
-                FloatingActionButton(
-                    onClick = { /* Implement locate me functionality */ },
-                    containerColor = Color(0xFF00BCD4),
-                    contentColor = Color.White,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(16.dp)
-                        .size(56.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.LocationOn,
-                        contentDescription = "Find my location",
-                        tint = Color.White
-                    )
-                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))

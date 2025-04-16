@@ -105,4 +105,27 @@ class UserProgressRepository(
             emit(emptyList())
         }
     }
+
+    // File: UserProgressRepository.kt
+// This is a new method to be added to your existing UserProgressRepository
+
+    // NEW METHOD: Check if a location has been visited
+    suspend fun isLocationVisited(locationId: String): Boolean {
+        return try {
+            visitedLocationDao.isLocationVisited(locationId)
+        } catch (e: Exception) {
+            Timber.e(e, "Error checking if location is visited: $locationId")
+            false
+        }
+    }
+
+    // NEW METHOD: Get all visited locations for a tour
+    suspend fun getVisitedLocationsForTour(tourId: String): List<VisitedLocation> {
+        return try {
+            visitedLocationDao.getVisitedLocationsForTour(tourId)
+        } catch (e: Exception) {
+            Timber.e(e, "Error getting visited locations for tour: $tourId")
+            emptyList()
+        }
+    }
 }

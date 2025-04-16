@@ -38,15 +38,16 @@ import com.example.havenspure_kotlin_prototype.ui.screens.ToursMainScreen
 import kotlinx.coroutines.launch
 
 @Composable
-fun AppNavHost(navController: NavHostController, context: Context , toursViewModel: ToursViewModel) {
+fun AppNavHost(navController: NavHostController, context: Context, toursViewModel: ToursViewModel) {
 
     // Initialize the LocationViewModel
     val locationViewModel: LocationViewModel = viewModel()
 
     // Get viewModels from dependency injection
-   // val toursViewModel = Graph.getInstance().toursViewModel
-   // val locationTourViewModel: LocationTourViewModel = Graph.getInstance().locationTourViewModel
+    val locationTourViewModel: LocationTourViewModel = Graph.getInstance().locationTourViewModel
 
+    // Initialize TourNavigationCoordinator from dependency injection
+    val tourNavigationCoordinator: TourNavigationCoordinator = Graph.getInstance().tourNavigationCoordinator
 
     // Drawer state for the navigation drawer
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -119,15 +120,12 @@ fun AppNavHost(navController: NavHostController, context: Context , toursViewMod
                 }
             ) {
                 MainScreen(
-
                     // Pass the LocationViewModel to MainScreen if needed
-                    locationViewModel = locationViewModel ,
+                    locationViewModel = locationViewModel,
                     onEntedeckenClick = {navController.navigate(Screen.ToursMain.route)}
                 )
-
             }
         }
-
 
         // Tours main screen showing available tours
         composable(Screen.ToursMain.route) {
@@ -193,6 +191,7 @@ fun AppNavHost(navController: NavHostController, context: Context , toursViewMod
                 }
             )
         }
+
         composable(route = Screen.RichtungenZeigen.route) {
             val tour = navController.previousBackStackEntry?.savedStateHandle?.get<Tour>("tour")
                 ?: Tour(id = "", title = "Unknown Tour", progress = 0)
@@ -203,32 +202,22 @@ fun AppNavHost(navController: NavHostController, context: Context , toursViewMod
                 locationViewModel = locationViewModel
             )
         }
-        composable(route = Screen.NavigationScreen.route) {
-            val tour = navController.previousBackStackEntry?.savedStateHandle?.get<Tour>("tour")
-                ?: Tour(id = "", title = "Unknown Tour", progress = 0)
 
-            NavigationScreen (
-                tour = tour,
+        // NavigationScreen - Updated to pass the tourNavigationCoordinator
+        composable(
+            route = "${Screen.NavigationScreen.route}/{tourId}",
+            arguments = listOf(navArgument("tourId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            // Extract tour ID from navigation arguments
+            val tourId = backStackEntry.arguments?.getString("tourId") ?: ""
+
+            NavigationScreen(
+                tourId = tourId,
                 onBackClick = { navController.popBackStack() },
-                locationViewModel = locationViewModel
+                locationViewModel = locationViewModel,
+                tourNavigationCoordinator = tourNavigationCoordinator  // Pass the coordinator from DI
             )
         }
-      /*
-        // Offline Richtungen Zeigen (Directions) screen
-        composable(route = Screen.OfflineRichtungenZeigen.route) {
-            val tour = navController.previousBackStackEntry?.savedStateHandle?.get<Tour>("tour")
-                ?: Tour(id = "", title = "Unknown Tour", progress = 0)
-
-            OfflineRichtungenZeigenScreen(
-                tour = tour,
-                onBackClick = { navController.popBackStack() },
-                locationViewModel = locationViewModel
-            )
-        }
-        */
-
-
-
 
         // Tour Lesen Screen - Using the same pattern of passing the Tour object
         composable(route = Screen.TourOverviewScreen.route) {
@@ -251,7 +240,6 @@ fun AppNavHost(navController: NavHostController, context: Context , toursViewMod
                 onBackClick = { navController.popBackStack() }
             )
         }
-
 
         // Additional screens can be added here
         // Map screen

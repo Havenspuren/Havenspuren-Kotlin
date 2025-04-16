@@ -237,7 +237,7 @@ class MapViewModel(private val context: Context) : ViewModel() {
     /**
      * Start navigation to destination with improved error handling
      */
-    fun startNavigation(mapView: MapView): Boolean {
+    fun startNavigation(destinationLocation: StateFlow<LocationDataOSRM?>, mapView: MapView): Boolean {
         // Don't start another calculation if one is in progress
         if (_isCalculatingRoute.value) {
             Log.d(TAG, "Route calculation already in progress, ignoring duplicate request")
@@ -563,7 +563,50 @@ class MapViewModel(private val context: Context) : ViewModel() {
                 _isCalculatingRoute.value = false
             }
         }
+
+        // File: MapViewModel.kt
+// These are new methods to be added to your existing MapViewModel class
+
+        // NEW METHOD: Change navigation destination without restarting
+        fun changeDestination(newDestination: LocationDataOSRM, mapView: MapView): Boolean {
+            Log.d(TAG, "Changing destination to: ${newDestination.latitude}, ${newDestination.longitude}")
+
+            // Don't change if we're calculating a route
+            if (_isCalculatingRoute.value) {
+                Log.d(TAG, "Route calculation in progress, ignoring destination change")
+                return false
+            }
+
+            // Update destination location
+            _destinationLocation.value = newDestination
+
+            // Start navigation to the new destination
+            return startNavigation(destinationLocation, mapView)
+        }
+
+        // NEW METHOD: Check if we're close to destination
+        fun isNearDestination(thresholdMeters: Double = 100.0): Boolean {
+            val userLoc = _userLocation.value
+            val destLoc = _destinationLocation.value
+
+            if (userLoc == null || destLoc == null) return false
+
+            val distance = LocationDataOSRM.distanceBetween(userLoc, destLoc)
+            return distance <= thresholdMeters
+        }
+
+        // NEW METHOD: Get current distance to destination
+        fun getDistanceToDestination(): Double {
+            val userLoc = _userLocation.value
+            val destLoc = _destinationLocation.value
+
+            if (userLoc == null || destLoc == null) return Double.MAX_VALUE
+
+            return LocationDataOSRM.distanceBetween(userLoc, destLoc)
+        }
     }
+
+
 
     override fun onCleared() {
         saveNavigationState()

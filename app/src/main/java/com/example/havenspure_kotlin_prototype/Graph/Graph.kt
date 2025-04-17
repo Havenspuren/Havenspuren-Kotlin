@@ -8,6 +8,7 @@ import com.example.havenspure_kotlin_prototype.ViewModels.LocationTourViewModel
 import com.example.havenspure_kotlin_prototype.ViewModels.ToursViewModel
 import com.example.havenspure_kotlin_prototype.data.local.AppDatabase
 import com.example.havenspure_kotlin_prototype.navigation.TourNavigationCoordinator
+import com.example.havenspure_kotlin_prototype.navigation.TourNavigator
 import com.havenspure.data.repository.DataInitRepository
 import com.havenspure.data.repository.TourRepository
 import com.havenspure.data.repository.UserProgressRepository
@@ -61,8 +62,9 @@ class Graph private constructor(private val context: Context) {
     }
 
     // Navigation Coordinator
-    val tourNavigationCoordinator by lazy {
-        TourNavigationCoordinator(context)
+    // With this:
+    val tourNavigator by lazy {
+        TourNavigator(context)
     }
 
     // Initialize default data

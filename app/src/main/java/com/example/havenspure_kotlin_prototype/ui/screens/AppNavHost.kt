@@ -47,7 +47,7 @@ fun AppNavHost(navController: NavHostController, context: Context, toursViewMode
     val locationTourViewModel: LocationTourViewModel = Graph.getInstance().locationTourViewModel
 
     // Initialize TourNavigationCoordinator from dependency injection
-    val tourNavigationCoordinator: TourNavigationCoordinator = Graph.getInstance().tourNavigationCoordinator
+    val tourNavigator: TourNavigator = Graph.getInstance().tourNavigator
 
     // Drawer state for the navigation drawer
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -215,7 +215,7 @@ fun AppNavHost(navController: NavHostController, context: Context, toursViewMode
                 tourId = tourId,
                 onBackClick = { navController.popBackStack() },
                 locationViewModel = locationViewModel,
-                tourNavigationCoordinator = tourNavigationCoordinator  // Pass the coordinator from DI
+                tourNavigator = tourNavigator  // Pass the coordinator from DI
             )
         }
 

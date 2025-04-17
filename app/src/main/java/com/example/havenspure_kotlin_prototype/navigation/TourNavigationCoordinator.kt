@@ -12,15 +12,7 @@ import kotlinx.coroutines.launch
 import org.osmdroid.views.MapView
 import kotlin.math.round
 
-/**
- * Navigation states for the tour
- */
-enum class TourNavigationState {
-    NotStarted,
-    EnRoute,
-    AtLocation,
-    Completed
-}
+
 
 /**
  * Coordinates the navigation between different locations in a tour.

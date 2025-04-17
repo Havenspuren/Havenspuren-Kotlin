@@ -28,8 +28,7 @@ import com.example.havenspure_kotlin_prototype.OSRM.data.models.LocationDataOSRM
 import com.example.havenspure_kotlin_prototype.OSRM.viewmodel.MapViewModel
 import com.example.havenspure_kotlin_prototype.ViewModels.LocationViewModel
 import com.example.havenspure_kotlin_prototype.di.Graph
-import com.example.havenspure_kotlin_prototype.navigation.TourNavigationCoordinator
-import com.example.havenspure_kotlin_prototype.navigation.TourNavigationLogic
+import com.example.havenspure_kotlin_prototype.navigation.TourNavigator
 import com.example.havenspure_kotlin_prototype.navigation.TourNavigationState
 import com.example.havenspure_kotlin_prototype.ui.theme.GradientEnd
 import com.example.havenspure_kotlin_prototype.ui.theme.GradientStart
@@ -47,7 +46,7 @@ fun NavigationScreen(
     tourId: String,
     onBackClick: () -> Unit,
     locationViewModel: LocationViewModel,
-    tourNavigationCoordinator: TourNavigationCoordinator
+    tourNavigator: TourNavigator
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -56,11 +55,14 @@ fun NavigationScreen(
     // Get toursViewModel from DI
     val toursViewModel = Graph.getInstance().toursViewModel
 
+    // Get locationTourViewModel for audio playback
+    val locationTourViewModel = Graph.getInstance().locationTourViewModel
+
+    // Flag to track if audio has been played for current location
+    var hasPlayedAudio by remember { mutableStateOf(false) }
+
     // Create MapViewModel
     val mapViewModel: MapViewModel = viewModel { MapViewModel(context) }
-
-    // Create navigation logic handler
-    val navigationLogic = remember { TourNavigationLogic(context) }
 
     // Get location from LocationViewModel
     val userLocationState by locationViewModel.location
@@ -78,12 +80,13 @@ fun NavigationScreen(
     val isFullyReady by mapViewModel.isFullyReady.collectAsState()
 
     // State for current and next locations
-    val currentLocation by navigationLogic.currentLocation.collectAsState()
-    val nextLocation by navigationLogic.nextLocation.collectAsState()
-    val visitedLocations by navigationLogic.visitedLocations.collectAsState()
-    val tourLocations by navigationLogic.tourLocations.collectAsState()
-    val tourProgress by navigationLogic.tourProgress.collectAsState()
-    val navigationState by navigationLogic.navigationState.collectAsState()
+    val currentLocation by tourNavigator.currentLocation.collectAsState()
+    val nextLocation by tourNavigator.nextLocation.collectAsState()
+    val visitedLocations by tourNavigator.visitedLocations.collectAsState()
+    val tourLocations by tourNavigator.tourLocations.collectAsState()
+    val tourProgress by tourNavigator.tourProgress.collectAsState()
+    val navigationState by tourNavigator.navigationState.collectAsState()
+    val isNearLocation by tourNavigator.isInProximity.collectAsState()
 
     // UI state for map display
     var uiState by remember { mutableStateOf(NavigationUiState.LOADING) }
@@ -132,11 +135,11 @@ fun NavigationScreen(
     val formattedDistance = remember(userLocationState, currentLocation) {
         userLocationState?.let { userLoc ->
             currentLocation?.let { targetLoc ->
-                val distance = navigationLogic.calculateDistance(
+                val distance = tourNavigator.calculateDistance(
                     userLoc.latitude, userLoc.longitude,
                     targetLoc.latitude, targetLoc.longitude
                 )
-                navigationLogic.formatDistance(distance)
+                tourNavigator.formatDistance(distance)
             }
         } ?: "Calculating..."
     }
@@ -155,8 +158,8 @@ fun NavigationScreen(
 
                         val visitedIds = visitedLocations.map { it.locationId }
 
-                        // Initialize navigation logic with tour data
-                        navigationLogic.initializeWithTour(tourWithLocations, visitedIds)
+                        // Initialize tour navigator with tour data
+                        tourNavigator.initializeWithTour(tourWithLocations, visitedIds)
                         isLoading = false
                     } catch (e: Exception) {
                         errorMessage = "Failed to load visited locations"
@@ -205,6 +208,12 @@ fun NavigationScreen(
                 // Update existing navigation
                 mapViewModel.updateNavigation(mapView)
             }
+
+            // Check proximity to current location - using the default 150m threshold in TourNavigator
+            tourNavigator.isNearCurrentLocation(
+                userLoc.latitude,
+                userLoc.longitude
+            )
         }
     }
 
@@ -214,13 +223,19 @@ fun NavigationScreen(
 
         // Check if user has arrived at the destination
         if (userLoc != null && currentLocation != null && hasArrived) {
-            // Mark current location as visited
-            navigationLogic.markCurrentLocationAsVisited()
+            // Mark current location as visited (this method will also update the database)
+            tourNavigator.markCurrentLocationAsVisited()
+        }
+    }
 
-            // Mark location as visited in repository
-            scope.launch {
-                currentLocation?.let { location ->
-                    Graph.getInstance().userProgressRepository.visitLocation(tourId, location.id)
+    // Audio playback when near location
+    LaunchedEffect(isNearLocation) {
+        if (isNearLocation && !hasPlayedAudio && navigationState == TourNavigationState.EnRoute) {
+            // Play audio for this location if available
+            tourNavigator.getCurrentLocationAudioFile()?.let { audioFile ->
+                if (audioFile.isNotEmpty()) {
+                    locationTourViewModel.playAudio(audioFile)
+                    hasPlayedAudio = true
                 }
             }
         }
@@ -233,9 +248,11 @@ fun NavigationScreen(
                 Lifecycle.Event.ON_RESUME -> {
                     mapView.onResume()
                 }
+
                 Lifecycle.Event.ON_PAUSE -> {
                     mapView.onPause()
                 }
+
                 else -> {}
             }
         }
@@ -316,7 +333,7 @@ fun NavigationScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Standort ${navigationLogic.getCurrentLocationIndex() + 1} von ${tourLocations.size}",
+                            text = "Standort ${tourNavigator.getCurrentLocationIndex() + 1} von ${tourLocations.size}",
                             fontSize = 16.sp,
                             color = Color.Black
                         )
@@ -443,20 +460,104 @@ fun NavigationScreen(
                             )
                         }
 
-                        // "Continue to next location" button (shown when at location)
-                        if (navigationState == TourNavigationState.AtLocation) {
-                            Button(
-                                onClick = {
-                                    navigationLogic.proceedToNextLocation()
-                                },
+                        // Navigation buttons at the bottom
+                        // Show the current distance to location when en route
+                        if (navigationState == TourNavigationState.EnRoute && !isNearLocation && userLocationState != null) {
+                            // Show distance indicator
+                            Card(
                                 modifier = Modifier
                                     .align(Alignment.BottomCenter)
-                                    .padding(bottom = 24.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF4CAF50)
+                                    .padding(bottom = 90.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color(0xAA000000)
                                 )
                             ) {
-                                Text("Weiter zum nächsten Standort")
+                                Text(
+                                    text = if (userLocationState != null && currentLocation != null) {
+                                        val distance = tourNavigator.getDistanceToCurrentLocation(
+                                            userLocationState!!.latitude,
+                                            userLocationState!!.longitude
+                                        )
+                                        "Noch ${tourNavigator.formatDistance(distance)} bis zum Ziel"
+                                    } else "Entfernung wird berechnet...",
+                                    color = Color.White,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                )
+                            }
+                        }
+
+                        if (isNearLocation || navigationState == TourNavigationState.AtLocation) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .align(Alignment.BottomCenter)
+                                    .padding(bottom = 24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                // Show "Mark as arrived" button when near but not yet marked
+                                if (isNearLocation && navigationState == TourNavigationState.EnRoute) {
+                                    Button(
+                                        onClick = {
+                                            // Mark current location as visited
+                                            tourNavigator.markCurrentLocationAsVisited()
+
+                                            // Stop audio if it's playing
+                                            if (hasPlayedAudio) {
+                                                locationTourViewModel.stopAudio()
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFFFF5722)
+                                        ),
+                                        elevation = ButtonDefaults.buttonElevation(
+                                            defaultElevation = 6.dp,
+                                            pressedElevation = 8.dp
+                                        ),
+                                        modifier = Modifier
+                                            .height(56.dp)
+                                            .padding(horizontal = 8.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.Center
+                                        ) {
+                                            Text(
+                                                text = "Standort markieren",
+                                                fontSize = 18.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Show "Continue to next" button when already at location
+                                if (navigationState == TourNavigationState.AtLocation) {
+                                    Button(
+                                        onClick = {
+                                            tourNavigator.proceedToNextLocation()
+                                            // Reset audio flag for next location
+                                            hasPlayedAudio = false
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFF4CAF50)
+                                        ),
+                                        elevation = ButtonDefaults.buttonElevation(
+                                            defaultElevation = 6.dp,
+                                            pressedElevation = 8.dp
+                                        ),
+                                        modifier = Modifier
+                                            .height(56.dp)
+                                            .padding(horizontal = 8.dp)
+                                    ) {
+                                        Text(
+                                            text = "Weiter zum nächsten Standort",
+                                            fontSize = 18.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

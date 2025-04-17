@@ -1,4 +1,4 @@
-# Havens Pure: Wilhelmshaven City Tour App
+# Havenspuren: Wilhelmshaven City Tour App
 
 ## Overview
 

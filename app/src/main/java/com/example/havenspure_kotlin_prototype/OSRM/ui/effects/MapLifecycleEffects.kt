@@ -6,7 +6,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import com.example.havenspure_kotlin_prototype.OSRM.viewmodel.MapViewModel
-import com.example.havenspure_kotlin_prototype.ViewModels.LocationTourViewModel
 import com.example.havenspure_kotlin_prototype.navigation.TourNavigator
 import org.osmdroid.views.MapView
 
@@ -18,7 +17,6 @@ fun MapLifecycleEffects(
     tourNavigator: TourNavigator,
     isNavigating: Boolean,
     hasPlayedAudio: Boolean,
-    locationTourViewModel: LocationTourViewModel,
     onResetAudioFlag: () -> Unit
 ) {
     DisposableEffect(lifecycleOwner) {
@@ -39,7 +37,7 @@ fun MapLifecycleEffects(
                     }
                     // Stop audio if it's playing
                     if (hasPlayedAudio) {
-                        locationTourViewModel.stopAudio()
+                        tourNavigator.stopAudio()
                         onResetAudioFlag()
                     }
                 }

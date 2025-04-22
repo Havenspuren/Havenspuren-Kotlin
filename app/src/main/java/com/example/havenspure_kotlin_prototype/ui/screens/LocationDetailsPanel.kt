@@ -18,8 +18,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.havenspure_kotlin_prototype.ViewModels.AudioState
 import com.example.havenspure_kotlin_prototype.data.model.Location
+import com.example.havenspure_kotlin_prototype.navigation.AudioState
 import com.example.havenspure_kotlin_prototype.ui.theme.PrimaryColor
 
 @Composable

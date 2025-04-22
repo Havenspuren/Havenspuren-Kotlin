@@ -631,8 +631,6 @@ fun NavigationScreen(
     // Get toursViewModel from DI
     val toursViewModel = Graph.getInstance().toursViewModel
 
-    // Get locationTourViewModel for audio playback
-    val locationTourViewModel = Graph.getInstance().locationTourViewModel
 
     // Flag to track if audio has been played for current location
     var hasPlayedAudio by remember { mutableStateOf(false) }
@@ -800,7 +798,7 @@ fun NavigationScreen(
             // Play audio for this location if available
             tourNavigator.getCurrentLocationAudioFile()?.let { audioFile ->
                 if (audioFile.isNotEmpty()) {
-                    locationTourViewModel.playAudio(audioFile)
+                    tourNavigator.playAudio(audioFile)
                     hasPlayedAudio = true
                 }
             }
@@ -815,7 +813,6 @@ fun NavigationScreen(
         tourNavigator = tourNavigator,
         isNavigating = isNavigating,
         hasPlayedAudio = hasPlayedAudio,
-        locationTourViewModel = locationTourViewModel,
         onResetAudioFlag = {
             hasPlayedAudio = false
         }
@@ -979,7 +976,7 @@ fun NavigationScreen(
 
                                     // Stop audio if it's playing
                                     if (hasPlayedAudio) {
-                                        locationTourViewModel.stopAudio()
+                                        tourNavigator.stopAudio()
                                     }
                                 },
                                 onProceedToNextLocation = {

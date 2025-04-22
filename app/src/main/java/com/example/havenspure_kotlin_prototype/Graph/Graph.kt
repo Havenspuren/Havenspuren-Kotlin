@@ -4,7 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
 import com.example.havenspure_kotlin_prototype.Utils.AudioUtils
-import com.example.havenspure_kotlin_prototype.ViewModels.LocationTourViewModel
+import com.example.havenspure_kotlin_prototype.Utils.TourAssetManager
 import com.example.havenspure_kotlin_prototype.ViewModels.ToursViewModel
 import com.example.havenspure_kotlin_prototype.data.local.AppDatabase
 import com.example.havenspure_kotlin_prototype.navigation.TourNavigationCoordinator
@@ -37,7 +37,7 @@ class Graph private constructor(private val context: Context) {
     private val trophyDao by lazy { database.trophyDao() }
 
     // Util classes
-    private val audioUtils by lazy { AudioUtils(context) }
+    val audioUtils by lazy { AudioUtils(context) }
 
     // Repositories
     val tourRepository by lazy {
@@ -56,10 +56,11 @@ class Graph private constructor(private val context: Context) {
     val toursViewModel by lazy {
         ToursViewModel(tourRepository, userProgressRepository)
     }
-
-    val locationTourViewModel by lazy {
-        LocationTourViewModel(tourRepository, userProgressRepository, audioUtils)
+    // Then add this property inside the Graph class
+    val tourAssetManager by lazy {
+        TourAssetManager(context)
     }
+
 
     // Navigation Coordinator
     // With this:

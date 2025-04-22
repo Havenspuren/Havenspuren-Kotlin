@@ -2,6 +2,7 @@ package com.example.havenspure_kotlin_prototype.Utils
 
 import android.content.Context
 import android.media.MediaPlayer
+import android.util.Log
 
 /**
  * Utility class for handling audio playback
@@ -12,15 +13,17 @@ class AudioUtils(private val context: Context) {
     private var currentAudioFile: String? = null
 
     /**
-     * Play audio file from assets
+     * Play audio file from assets with a full path
+     * @param assetPath Full path to the audio file in assets
+     * @param onCompletion Callback when audio playback completes
      */
-    fun playAudio(fileName: String, onCompletion: () -> Unit = {}) {
+    fun playAudio(assetPath: String, onCompletion: () -> Unit = {}) {
         // Stop current playback if any
         stopAudio()
 
         try {
             mediaPlayer = MediaPlayer().apply {
-                val assetFileDescriptor = context.assets.openFd("audio/$fileName")
+                val assetFileDescriptor = context.assets.openFd(assetPath)
                 setDataSource(
                     assetFileDescriptor.fileDescriptor,
                     assetFileDescriptor.startOffset,
@@ -31,7 +34,7 @@ class AudioUtils(private val context: Context) {
                 setOnPreparedListener {
                     start()
                     this@AudioUtils.isPlaying = true
-                    currentAudioFile = fileName
+                    currentAudioFile = assetPath
                 }
 
                 setOnCompletionListener {
@@ -43,8 +46,23 @@ class AudioUtils(private val context: Context) {
                 prepareAsync()
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("AudioUtils", "Error playing audio file: $assetPath", e)
+            onCompletion() // Call completion callback even on error
         }
+    }
+
+    /**
+     * Play audio for a specific tour
+     * @param tourId The tour identifier
+     * @param fileName The audio file name
+     * @param onCompletion Callback when audio playback completes
+     */
+    fun playTourAudio(tourId: String, fileName: String, onCompletion: () -> Unit = {}) {
+        val cleanTourId = tourId.trim().let {
+            if (it.startsWith("tour_")) it else "tour_$it"
+        }
+
+        playAudio("$cleanTourId/audio/$fileName", onCompletion)
     }
 
     /**

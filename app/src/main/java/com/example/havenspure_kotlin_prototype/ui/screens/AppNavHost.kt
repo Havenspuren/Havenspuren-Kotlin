@@ -21,7 +21,6 @@ import androidx.navigation.navArgument
 import com.example.havenspure_kotlin_prototype.AppDrawer
 import com.example.havenspure_kotlin_prototype.OSRM.viewmodel.MapViewModel
 import com.example.havenspure_kotlin_prototype.Utils.LocationUtils
-import com.example.havenspure_kotlin_prototype.ViewModels.LocationTourViewModel
 import com.example.havenspure_kotlin_prototype.ViewModels.LocationViewModel
 import com.example.havenspure_kotlin_prototype.ViewModels.ToursViewModel
 import com.example.havenspure_kotlin_prototype.di.Graph
@@ -43,8 +42,6 @@ fun AppNavHost(navController: NavHostController, context: Context, toursViewMode
     // Initialize the LocationViewModel
     val locationViewModel: LocationViewModel = viewModel()
 
-    // Get viewModels from dependency injection
-    val locationTourViewModel: LocationTourViewModel = Graph.getInstance().locationTourViewModel
 
     // Initialize TourNavigationCoordinator from dependency injection
     val tourNavigator: TourNavigator = Graph.getInstance().tourNavigator

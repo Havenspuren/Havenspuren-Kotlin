@@ -31,7 +31,7 @@ class TourNavigator(private val context: Context) : ViewModel() {
     private val TAG = "TourNavigator"
 
     // Default proximity threshold - now set to 150 meters
-    private val DEFAULT_PROXIMITY_THRESHOLD = 150f
+    private val DEFAULT_PROXIMITY_THRESHOLD = 40f
 
     // Current navigation state
     private val _navigationState = MutableStateFlow(TourNavigationState.NotStarted)
@@ -249,7 +249,7 @@ class TourNavigator(private val context: Context) : ViewModel() {
         val distance = calculateDistance(userLat, userLng, currentLoc.latitude, currentLoc.longitude)
         val isNear = distance <= thresholdMeters
 
-        // Update proximity state
+        // Update proximity state only - don't mark as visited here
         if (_isInProximity.value != isNear) {
             _isInProximity.value = isNear
             Log.d(TAG, "Proximity changed to: $isNear (distance: ${formatDistance(distance)})")
@@ -286,5 +286,13 @@ class TourNavigator(private val context: Context) : ViewModel() {
     fun getDistanceToCurrentLocation(userLat: Double, userLng: Double): Float {
         val currentLoc = _currentLocation.value ?: return -1f
         return calculateDistance(userLat, userLng, currentLoc.latitude, currentLoc.longitude)
+    }
+    // Add to TourNavigator class
+    /**
+     * Helper method to get the next location after navigation state changes
+     * @return The current target location after navigation state has been updated
+     */
+    fun getCurrentTargetLocation(): Location? {
+        return _currentLocation.value
     }
 }

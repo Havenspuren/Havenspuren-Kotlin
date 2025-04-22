@@ -606,6 +606,57 @@ class MapViewModel(private val context: Context) : ViewModel() {
         }
     }
 
+    // Add these methods to your MapViewModel class
+
+    /**
+     * Cleans up all orientation tracking resources
+     */
+    fun cleanupOrientation() {
+        try {
+            // Use the proper cleanup method from MapAssistant
+            // MapAssistant internally calls navigationManager.stopOrientationTracking()
+            mapAssistant.cleanup()
+
+            Log.d(TAG, "Orientation tracking stopped and cleaned up")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cleaning up orientation tracking: ${e.message}")
+        }
+    }
+
+    /**
+     * Performs complete cleanup of all map resources
+     * Call this when leaving the navigation screen
+     */
+    fun cleanupMapResources(mapView: MapView) {
+        Log.d(TAG, "Starting map resources cleanup")
+
+        try {
+            // Stop navigation if active
+            if (_isNavigating.value) {
+                stopNavigation()
+            }
+
+            // Clean up orientation tracking - calls mapAssistant.cleanup() which handles orientation tracking
+            cleanupOrientation()
+
+            // Clear any overlays from the map
+            mapView.overlays.clear()
+
+            // Reset state values
+            _isFullyReady.value = false
+            _isMinimallyReady.value = false
+            _mapTilesLoaded.value = false
+            _routeCalculated.value = false
+
+            // Save navigation state before clearing current values
+            saveNavigationState()
+
+            Log.d(TAG, "Map resources fully cleaned up")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during map cleanup: ${e.message}")
+        }
+    }
+
 
 
     override fun onCleared() {

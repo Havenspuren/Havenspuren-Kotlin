@@ -24,9 +24,6 @@ data class Tour(
     val author: String
 ) : Parcelable
 
-/**
- * Location entity representing a point of interest in a tour
- */
 @Parcelize
 @Entity(
     tableName = "locations",
@@ -38,7 +35,7 @@ data class Tour(
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index("tourId")] // Add this line to fix the warning
+    indices = [Index("tourId")]
 )
 data class Location(
     @PrimaryKey val id: String,
@@ -53,7 +50,8 @@ data class Location(
     val hasTrophy: Boolean,
     val trophyTitle: String?,
     val trophyDescription: String?,
-    val trophyImageName: String?
+    val trophyImageName: String?,
+    val imageName: String? = null
 ) : Parcelable
 
 /**

@@ -9,6 +9,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.havenspure_kotlin_prototype.data.model.Location
 import com.example.havenspure_kotlin_prototype.data.model.Tour
 import com.example.havenspure_kotlin_prototype.data.model.TourWithLocations
@@ -26,7 +28,7 @@ import com.example.havenspure_kotlin_prototype.data.model.VisitedLocation
         VisitedLocation::class,
         Trophy::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class HavenspurenDatabase : RoomDatabase() {
@@ -38,6 +40,14 @@ abstract class HavenspurenDatabase : RoomDatabase() {
     abstract fun trophyDao(): TrophyDao
 
     companion object {
+        // Define the migration from version 1 to 2
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Add the imageName column to the locations table
+                database.execSQL("ALTER TABLE locations ADD COLUMN imageName TEXT")
+            }
+        }
+
         @Volatile
         private var INSTANCE: HavenspurenDatabase? = null
 
@@ -48,6 +58,7 @@ abstract class HavenspurenDatabase : RoomDatabase() {
                     HavenspurenDatabase::class.java,
                     "havenspuren_database"
                 )
+                    .addMigrations(MIGRATION_1_2)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

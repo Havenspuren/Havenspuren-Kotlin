@@ -711,7 +711,11 @@ class TourNavigator(private val context: Context) : ViewModel() {
     fun playAudio(audioFileName: String) {
         _audioState.value = AudioState.Loading
 
-        audioUtils.playAudio(audioFileName) {
+        // Get the full path
+        val tourId = currentTourId ?: "default"
+        val audioPath = tourAssetManager.getAudioPath(tourId, audioFileName)
+
+        audioUtils.playAudio(audioPath) {
             // On completion callback
             _audioState.value = AudioState.Stopped
         }

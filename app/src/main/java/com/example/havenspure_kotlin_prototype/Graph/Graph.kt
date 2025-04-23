@@ -6,9 +6,9 @@ import android.util.Log
 import com.example.havenspure_kotlin_prototype.Utils.AudioUtils
 import com.example.havenspure_kotlin_prototype.Utils.TourAssetManager
 import com.example.havenspure_kotlin_prototype.ViewModels.ToursViewModel
-import com.example.havenspure_kotlin_prototype.data.local.AppDatabase
 import com.example.havenspure_kotlin_prototype.navigation.TourNavigationCoordinator
 import com.example.havenspure_kotlin_prototype.navigation.TourNavigator
+import com.havenspure.data.local.HavenspurenDatabase
 import com.havenspure.data.repository.DataInitRepository
 import com.havenspure.data.repository.TourRepository
 import com.havenspure.data.repository.UserProgressRepository
@@ -26,7 +26,7 @@ class Graph private constructor(private val context: Context) {
 
     // Database instance
     private val database by lazy {
-        AppDatabase.getDatabase(context)
+        HavenspurenDatabase.getDatabase(context)
     }
 
     // DAOs

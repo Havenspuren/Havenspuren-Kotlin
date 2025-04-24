@@ -1,305 +1,3 @@
-/*
-package com.example.havenspure_kotlin_prototype.navigation
-
-import android.content.Context
-import android.util.Log
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.example.havenspure_kotlin_prototype.OSRM.data.models.LocationDataOSRM
-import com.example.havenspure_kotlin_prototype.data.model.Location
-import com.example.havenspure_kotlin_prototype.data.model.TourWithLocations
-import com.example.havenspure_kotlin_prototype.di.Graph
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import org.osmdroid.views.MapView
-
-/**
- * Navigation states for the tour
- */
-enum class TourNavigationState {
-    NotStarted,
-    EnRoute,
-    AtLocation,
-    Completed
-}
-
-/**
- * Consolidated class that handles all tour navigation functionality.
- */
-class TourNavigator(private val context: Context) : ViewModel() {
-    private val TAG = "TourNavigator"
-
-    // Default proximity threshold - now set to 150 meters
-    private val DEFAULT_PROXIMITY_THRESHOLD = 40f
-
-    // Current navigation state
-    private val _navigationState = MutableStateFlow(TourNavigationState.NotStarted)
-    val navigationState: StateFlow<TourNavigationState> = _navigationState.asStateFlow()
-
-    // Current and next location in the tour
-    private val _currentLocation = MutableStateFlow<Location?>(null)
-    val currentLocation: StateFlow<Location?> = _currentLocation.asStateFlow()
-
-    private val _nextLocation = MutableStateFlow<Location?>(null)
-    val nextLocation: StateFlow<Location?> = _nextLocation.asStateFlow()
-
-    // Tour data
-    private val _tourLocations = MutableStateFlow<List<Location>>(emptyList())
-    val tourLocations: StateFlow<List<Location>> = _tourLocations.asStateFlow()
-
-    // Visited locations tracking
-    private val _visitedLocations = MutableStateFlow<List<String>>(emptyList())
-    val visitedLocations: StateFlow<List<String>> = _visitedLocations.asStateFlow()
-
-    // Tour progress
-    private val _tourProgress = MutableStateFlow(0f)
-    val tourProgress: StateFlow<Float> = _tourProgress.asStateFlow()
-
-    // Proximity detection
-    private val _isInProximity = MutableStateFlow(false)
-    val isInProximity: StateFlow<Boolean> = _isInProximity.asStateFlow()
-
-    // Current tour ID for reference
-    private var currentTourId: String? = null
-
-    /**
-     * Initialize with tour data
-     * @param tourWithLocations The tour data containing all locations
-     * @param visitedLocationIds List of already visited location IDs
-     */
-    fun initializeWithTour(tourWithLocations: TourWithLocations, visitedLocationIds: List<String>) {
-        try {
-            Log.d(TAG, "Initializing tour with ${tourWithLocations.locations.size} locations")
-            currentTourId = tourWithLocations.tour.id
-
-            // Sort locations by order
-            val sortedLocations = tourWithLocations.locations.sortedBy { it.order }
-            _tourLocations.value = sortedLocations
-
-            // Set visited locations
-            _visitedLocations.value = visitedLocationIds
-            Log.d(TAG, "Visited locations: ${visitedLocationIds.size}")
-
-            // Calculate progress
-            calculateProgress()
-
-            // Determine current location (first unvisited location)
-            determineCurrentLocation()
-
-            Log.d(TAG, "Current location: ${_currentLocation.value?.name}")
-            Log.d(TAG, "Navigation state: ${_navigationState.value}")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error initializing tour: ${e.message}")
-        }
-    }
-
-    /**
-     * Calculate tour progress
-     */
-    private fun calculateProgress() {
-        val totalLocations = _tourLocations.value.size
-        if (totalLocations > 0) {
-            val visitedCount = _visitedLocations.value.size
-            _tourProgress.value = visitedCount.toFloat() / totalLocations
-            Log.d(TAG, "Progress: ${_tourProgress.value * 100}%")
-        }
-    }
-
-    /**
-     * Determine the current target location based on progress
-     */
-    private fun determineCurrentLocation() {
-        val locations = _tourLocations.value
-        val visited = _visitedLocations.value
-
-        if (locations.isEmpty()) {
-            Log.w(TAG, "No locations found in tour")
-            _navigationState.value = TourNavigationState.NotStarted
-            return
-        }
-
-        // Find first unvisited location
-        val unvisitedLocations = locations.filter { !visited.contains(it.id) }
-            .sortedBy { it.order }
-
-        Log.d(TAG, "Unvisited locations: ${unvisitedLocations.size}")
-
-        if (unvisitedLocations.isEmpty()) {
-            // All locations visited
-            _currentLocation.value = null
-            _nextLocation.value = null
-            _navigationState.value = TourNavigationState.Completed
-            Log.d(TAG, "Tour completed")
-        } else {
-            // Set current location to the first unvisited location
-            _currentLocation.value = unvisitedLocations.first()
-
-            // Set next location if available
-            _nextLocation.value = if (unvisitedLocations.size > 1) {
-                unvisitedLocations[1]
-            } else {
-                null
-            }
-
-            _navigationState.value = TourNavigationState.EnRoute
-            Log.d(TAG, "Setting current location: ${_currentLocation.value?.name}")
-        }
-    }
-
-    /**
-     * Convert Location to LocationDataOSRM for map navigation
-     */
-    fun getLocationAsOSRM(location: Location?): LocationDataOSRM? {
-        return location?.let {
-            LocationDataOSRM(
-                latitude = it.latitude,
-                longitude = it.longitude
-            )
-        }
-    }
-
-    /**
-     * Mark current location as visited and update database
-     */
-    fun markCurrentLocationAsVisited() {
-        _currentLocation.value?.let { location ->
-            if (!_visitedLocations.value.contains(location.id)) {
-                // Update local state
-                val updatedList = _visitedLocations.value + location.id
-                _visitedLocations.value = updatedList
-                _navigationState.value = TourNavigationState.AtLocation
-                calculateProgress()
-
-                // Update database
-                viewModelScope.launch {
-                    currentTourId?.let { tourId ->
-                        try {
-                            Graph.getInstance().userProgressRepository.visitLocation(tourId, location.id)
-                            Log.d(TAG, "Location marked as visited in database: ${location.name}")
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error updating database: ${e.message}")
-                        }
-                    }
-                }
-
-                Log.d(TAG, "Marked location as visited: ${location.name}")
-            }
-        }
-    }
-
-    /**
-     * Proceed to next location in the tour
-     */
-    fun proceedToNextLocation() {
-        Log.d(TAG, "Proceeding to next location")
-        // Update navigation state
-        _navigationState.value = TourNavigationState.EnRoute
-
-        // Determine new current and next locations
-        determineCurrentLocation()
-    }
-
-    /**
-     * Get current location index (0-based)
-     */
-    fun getCurrentLocationIndex(): Int {
-        val current = _currentLocation.value ?: return 0
-        return _tourLocations.value.indexOfFirst { it.id == current.id }.coerceAtLeast(0)
-    }
-
-    /**
-     * Calculate distance between two points (in meters)
-     */
-    fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
-        val results = FloatArray(1)
-        android.location.Location.distanceBetween(lat1, lon1, lat2, lon2, results)
-        return results[0]
-    }
-
-    /**
-     * Format distance for display
-     */
-    fun formatDistance(distanceInMeters: Float): String {
-        return when {
-            distanceInMeters < 1000 -> "${distanceInMeters.toInt()} m"
-            else -> String.format("%.1f km", distanceInMeters / 1000)
-        }
-    }
-
-    /**
-     * Check if user is near the current location using the default threshold
-     * @param userLat User's current latitude
-     * @param userLng User's current longitude
-     * @return True if user is within threshold distance of current location
-     */
-    fun isNearCurrentLocation(userLat: Double, userLng: Double): Boolean {
-        return isNearCurrentLocation(userLat, userLng, DEFAULT_PROXIMITY_THRESHOLD)
-    }
-
-    /**
-     * Check if user is near the current location
-     * @param userLat User's current latitude
-     * @param userLng User's current longitude
-     * @param thresholdMeters Distance threshold in meters to consider "near"
-     * @return True if user is within threshold distance of current location
-     */
-    fun isNearCurrentLocation(userLat: Double, userLng: Double, thresholdMeters: Float): Boolean {
-        val currentLoc = _currentLocation.value ?: return false
-        val distance = calculateDistance(userLat, userLng, currentLoc.latitude, currentLoc.longitude)
-        val isNear = distance <= thresholdMeters
-
-        // Update proximity state only - don't mark as visited here
-        if (_isInProximity.value != isNear) {
-            _isInProximity.value = isNear
-            Log.d(TAG, "Proximity changed to: $isNear (distance: ${formatDistance(distance)})")
-        }
-
-        return isNear
-    }
-
-    /**
-     * Update proximity status directly
-     * This can be called from UI components that need to update the proximity state
-     */
-    fun updateProximityStatus(isInProximity: Boolean) {
-        if (this._isInProximity.value != isInProximity) {
-            this._isInProximity.value = isInProximity
-            Log.d(TAG, "Proximity status updated to: $isInProximity")
-        }
-    }
-
-    /**
-     * Gets the audio filename for the current location if available
-     * @return The audio filename that should be played, or null if none
-     */
-    fun getCurrentLocationAudioFile(): String? {
-        return _currentLocation.value?.audioFileName
-    }
-
-    /**
-     * Gets the current distance to the target location
-     * @param userLat User's current latitude
-     * @param userLng User's current longitude
-     * @return Distance in meters to the current location, or -1 if no current location
-     */
-    fun getDistanceToCurrentLocation(userLat: Double, userLng: Double): Float {
-        val currentLoc = _currentLocation.value ?: return -1f
-        return calculateDistance(userLat, userLng, currentLoc.latitude, currentLoc.longitude)
-    }
-    // Add to TourNavigator class
-    /**
-     * Helper method to get the next location after navigation state changes
-     * @return The current target location after navigation state has been updated
-     */
-    fun getCurrentTargetLocation(): Location? {
-        return _currentLocation.value
-    }
-}
-
- */
-
 package com.example.havenspure_kotlin_prototype.navigation
 
 import android.content.Context
@@ -312,17 +10,15 @@ import com.example.havenspure_kotlin_prototype.Utils.TourAssetManager
 import com.example.havenspure_kotlin_prototype.data.LocationData
 import com.example.havenspure_kotlin_prototype.data.model.Location
 import com.example.havenspure_kotlin_prototype.data.model.TourWithLocations
-import com.example.havenspure_kotlin_prototype.di.Graph
+import com.havenspure.data.repository.TourRepository
+import com.havenspure.data.repository.UserProgressRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import org.osmdroid.views.MapView
 
 /**
  * Navigation states for the tour
@@ -340,6 +36,7 @@ enum class TourNavigationState {
 sealed class AudioState {
     object Loading : AudioState()
     data class Playing(val audioFileName: String) : AudioState()
+    data class Paused(val audioFileName: String) : AudioState()
     object Stopped : AudioState()
 }
 
@@ -363,17 +60,18 @@ sealed class LocationTourUiState {
 
 /**
  * Consolidated class that handles all tour navigation functionality.
+ * Dependencies are injected through constructor for better testability and reusability.
  */
-class TourNavigator(private val context: Context) : ViewModel() {
+class TourNavigator(
+    private val context: Context,
+    private val tourRepository: TourRepository,
+    private val userProgressRepository: UserProgressRepository,
+    private val audioUtils: AudioUtils,
+    private val tourAssetManager: TourAssetManager
+) : ViewModel() {
     private val TAG = "TourNavigator"
 
-    // Dependencies
-    private val tourRepository = Graph.getInstance().tourRepository
-    private val userProgressRepository = Graph.getInstance().userProgressRepository
-    private val audioUtils = Graph.getInstance().audioUtils  // Make sure this exists in Graph
-    private val tourAssetManager = Graph.getInstance().tourAssetManager
-
-    // Default proximity threshold - now set to 40 meters
+    // Default proximity threshold - set to 40 meters
     private val DEFAULT_PROXIMITY_THRESHOLD = 40f
 
     // Current navigation state
@@ -706,6 +404,15 @@ class TourNavigator(private val context: Context) : ViewModel() {
     }
 
     /**
+     * Load location for the detail screen
+     * Special method for the location detail screen to set current location
+     */
+    fun loadLocationForDetailScreen(location: Location) {
+        // Set the current location and navigation state
+        setCurrentLocationDirectly(location)
+    }
+
+    /**
      * Play audio for a location
      */
     fun playAudio(audioFileName: String) {
@@ -763,8 +470,98 @@ class TourNavigator(private val context: Context) : ViewModel() {
      * Stop currently playing audio
      */
     fun stopAudio() {
-        audioUtils.release()
+        audioUtils.stopAudio()
         _audioState.value = AudioState.Stopped
+    }
+
+    /**
+     * Pause the currently playing audio
+     */
+    fun pauseAudio() {
+        if (audioState.value is AudioState.Playing) {
+            // Pause audio playback
+            audioUtils.pauseAudio()
+
+            // Update state
+            _audioState.value = AudioState.Paused((audioState.value as AudioState.Playing).audioFileName)
+        }
+    }
+
+    /**
+     * Resume audio playback if paused
+     */
+    fun resumeAudio() {
+        if (audioState.value is AudioState.Paused) {
+            // Resume audio playback
+            audioUtils.resumeAudio()
+
+            // Update state
+            _audioState.value = AudioState.Playing((audioState.value as AudioState.Paused).audioFileName)
+        }
+    }
+
+    /**
+     * Skip forward in the current audio
+     * @param seconds Number of seconds to skip forward
+     */
+    fun skipForward(seconds: Int) {
+        if (audioState.value is AudioState.Playing || audioState.value is AudioState.Paused) {
+            // Get current position
+            val currentPosition = audioUtils.getCurrentPosition()
+            val duration = audioUtils.getAudioDuration()
+
+            // Calculate new position (ensure it doesn't exceed duration)
+            val newPosition = (currentPosition + (seconds * 1000)).coerceAtMost(duration)
+
+            // Seek to new position
+            audioUtils.seekTo(newPosition)
+        }
+    }
+
+    /**
+     * Skip backward in the current audio
+     * @param seconds Number of seconds to skip backward
+     */
+    fun skipBackward(seconds: Int) {
+        if (audioState.value is AudioState.Playing || audioState.value is AudioState.Paused) {
+            // Get current position
+            val currentPosition = audioUtils.getCurrentPosition()
+
+            // Calculate new position (ensure it doesn't go below zero)
+            val newPosition = (currentPosition - (seconds * 1000)).coerceAtLeast(0)
+
+            // Seek to new position
+            audioUtils.seekTo(newPosition)
+        }
+    }
+
+    /**
+     * Seek to a specific position in the audio
+     * @param positionMs Position to seek to in milliseconds
+     */
+    fun seekToPosition(positionMs: Int) {
+        if (audioState.value is AudioState.Playing || audioState.value is AudioState.Paused) {
+            // Seek to specified position
+            audioUtils.seekTo(positionMs)
+        }
+    }
+
+    /**
+     * Get the current audio playback position in milliseconds
+     * @return Current position in milliseconds
+     */
+    fun getAudioPosition(): Int {
+        // Return current position
+        return audioUtils.getCurrentPosition()
+    }
+
+    /**
+     * Get the total duration of the current audio in milliseconds
+     * @return Duration in milliseconds
+     */
+    fun getAudioDuration(): Int {
+        // Return duration
+        return audioUtils.getAudioDuration()
     }
 
     /**
@@ -849,6 +646,15 @@ class TourNavigator(private val context: Context) : ViewModel() {
     }
 
     /**
+     * Check if a location is visited (synchronous version)
+     * @param locationId The location ID to check
+     * @return True if location has been visited
+     */
+    fun isLocationVisited(locationId: String): Boolean {
+        return _visitedLocations.value.contains(locationId)
+    }
+
+    /**
      * Gets the audio file path for the current location
      * @return Full asset path for current location's audio file, or null if none
      */
@@ -891,6 +697,38 @@ class TourNavigator(private val context: Context) : ViewModel() {
     fun validateTourAssets(): List<String> {
         val tourId = currentTourId ?: "default"
         return tourAssetManager.validateTourAssets(tourId, _tourLocations.value)
+    }
+
+    /**
+     * Directly set a specific location as the current location
+     * This is used by detail screens to ensure audio playback for the viewed location
+     * @param location The location to set as current
+     */
+    fun setCurrentLocationDirectly(location: Location) {
+        // Update internal state to this location
+        _currentLocation.value = location
+
+        // Set navigation state to AtLocation
+        _navigationState.value = TourNavigationState.AtLocation
+    }
+
+    /**
+     * Play audio for a specific location
+     * @param location The location to play audio for
+     */
+    fun playLocationAudio(location: Location) {
+        if (!location.audioFileName.isNullOrEmpty()) {
+            playAudio(location.audioFileName)
+        }
+    }
+
+
+    fun setNavigationState(state: TourNavigationState) {
+        // Update the navigation state directly
+        _navigationState.value = state
+
+        // Log the state change
+        Log.d("TourNavigator", "Navigation state updated to: $state")
     }
 
     /**

@@ -142,6 +142,9 @@ dependencies {
     // Add Timber for logging
     implementation ("com.jakewharton.timber:timber:5.0.1")  // Use the latest version
 
+    // Scroll
+    implementation ("androidx.compose.foundation:foundation:1.x.x")
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

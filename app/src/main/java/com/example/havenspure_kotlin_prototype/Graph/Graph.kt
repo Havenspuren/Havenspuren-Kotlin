@@ -36,7 +36,7 @@ class Graph private constructor(private val context: Context) {
     private val visitedLocationDao by lazy { database.visitedLocationDao() }
     private val trophyDao by lazy { database.trophyDao() }
 
-    // Util classes
+    // AudioUtils as a singleton
     val audioUtils by lazy { AudioUtils(context) }
 
     // Repositories
@@ -62,11 +62,19 @@ class Graph private constructor(private val context: Context) {
     }
 
 
-    // Navigation Coordinator
-    // With this:
+    // In your Graph.kt file
+
+    // Replace the current tourNavigator initialization
     val tourNavigator by lazy {
-        TourNavigator(context)
+        TourNavigator(
+            context = context,
+            tourRepository = tourRepository,
+            userProgressRepository = userProgressRepository,
+            audioUtils = audioUtils,
+            tourAssetManager = tourAssetManager
+        )
     }
+
 
     // Initialize default data
     init {
